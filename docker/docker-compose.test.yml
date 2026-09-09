@@ -7,10 +7,8 @@ services:
       POSTGRES_USER: aperture
       POSTGRES_PASSWORD: aperture
       POSTGRES_DB: aperture
-    ports:
-      - "5432:5432"
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - pgdata_test:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U aperture"]
       interval: 2s
@@ -32,12 +30,7 @@ services:
         condition: service_healthy
 
   api:
-    build:
-      context: ../services/api
-      additional_contexts:
-        version: ../VERSION
-    ports:
-      - "8000:8000"
+    build: ../services/api
     environment:
       DATABASE_URL: postgresql://aperture:aperture@db:5432/aperture
       PORT: 8000
@@ -52,24 +45,23 @@ services:
       timeout: 5s
       retries: 5
 
-  worker:
-    build: ../worker
+  test-runner:
+    image: python:3.12-slim
+    volumes:
+      - ../tests/integration:/tests
+      - ../worker:/worker
+    working_dir: /tests
     environment:
+      API_URL: http://api:8000
       DATABASE_URL: postgresql://aperture:aperture@db:5432/aperture
-      WORKER_INTERVAL_SECONDS: 30
-    depends_on:
-      migrate:
-        condition: service_completed_successfully
-
-  web:
-    build: ../services/web
-    ports:
-      - "3000:3000"
-    environment:
-      NEXT_PUBLIC_API_URL: http://localhost:8000
+    command: >
+      sh -c "
+        pip install requests psycopg2-binary numpy scipy -q &&
+        python test_e2e.py
+      "
     depends_on:
       api:
         condition: service_healthy
 
 volumes:
-  pgdata:
+  pgdata_test:

@@ -1,0 +1,7 @@
+# Local development overrides
+services:
+  web:
+    volumes:
+      - ../services/web:/app
+      - /app/node_modules
+      - /app/.next

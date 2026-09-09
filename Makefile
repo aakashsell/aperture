@@ -1,10 +1,10 @@
 # Aperture — make it easy to build, test, and deploy
 
-.PHONY: all build dev test migrate migrate-down clean
+.PHONY: all build dev dev-detached logs stop test test-integration test-api lint-api fmt-api clean rebuild-api rebuild-worker rebuild-web
 
 # ─── Compose ─────────────────────────────────────────────
 COMPOSE_DEV = docker compose -f docker/docker-compose.yml -f docker/docker-compose.override.yml
-COMPOSE_PROD = docker compose -f docker/docker-compose.yml
+COMPOSE_TEST = docker compose -f docker/docker-compose.test.yml
 
 all: build
 
@@ -27,24 +27,17 @@ stop:
 migrate:
 	$(COMPOSE_DEV) run --rm migrate
 
-migrate-down:
-	$(COMPOSE_DEV) run --rm migrate down
-
-seed:
-	$(COMPOSE_DEV) run --rm api ./scripts/seed.sh
-
 # ─── Testing ─────────────────────────────────────────────
-test:
-	go test ./services/api/...
+test: test-integration
 
-test-worker:
-	cd services/worker && python -m pytest
-
-test-sdk:
-	cd sdks/ts && npm test
+test-api:
+	cd services/api && go test ./...
 
 test-integration:
-	$(COMPOSE_DEV) -f docker/docker-compose.test.yml up --abort-on-container-exit
+	$(COMPOSE_TEST) up --build --abort-on-container-exit
+
+test-integration-clean:
+	$(COMPOSE_TEST) down -v
 
 # ─── Code quality ────────────────────────────────────────
 lint-api:
@@ -53,7 +46,7 @@ lint-api:
 fmt-api:
 	cd services/api && gofmt -w .
 
-# ─── Single-service rebuilds (zero-downtime friendly) ────
+# ─── Single-service rebuilds ─────────────────────────────
 rebuild-api:
 	$(COMPOSE_DEV) up --build -d api
 
@@ -66,4 +59,5 @@ rebuild-web:
 # ─── Clean ───────────────────────────────────────────────
 clean:
 	$(COMPOSE_DEV) down -v
+	$(COMPOSE_TEST) down -v 2>/dev/null || true
 	docker system prune -f
