@@ -4,7 +4,6 @@
 *.so
 *.dylib
 *.test
-api
 /api/api
 /services/api/api
 
