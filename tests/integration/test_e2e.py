@@ -330,7 +330,7 @@ def test_full_pipeline_with_stats(exp_key="test_checkout"):
     exp_rows = db_query("SELECT id FROM experiments WHERE key = %s", (exp_key,))
     exp_id = exp_rows[0]["id"]
     control_result = db_query(
-        "SELECT mean FROM experiment_results WHERE experiment_id = %s AND metric_id = %s AND variant_id IN (SELECT id FROM variants WHERE experiment_id = %s AND is_control = true)",
+        "SELECT mean, mde FROM experiment_results WHERE experiment_id = %s AND metric_id = %s AND variant_id IN (SELECT id FROM variants WHERE experiment_id = %s AND is_control = true)",
         (exp_id, metric_id, exp_id)
     )
     treatment_result = db_query(
@@ -343,6 +343,15 @@ def test_full_pipeline_with_stats(exp_key="test_checkout"):
     # Treatment should have higher mean (probabilistically true with our seed)
     assert treatment_result[0]["mean"] > control_result[0]["mean"]
 
+    # MDE should be computed
+    assert control_result[0]["mde"] is not None
+    assert control_result[0]["mde"] > 0
+
+    # SRM should be computed (no mismatch expected with hash-based assignment)
+    exp_row = db_query("SELECT srm_p_value FROM experiments WHERE id = %s", (exp_id,))
+    assert exp_row[0]["srm_p_value"] is not None
+    assert exp_row[0]["srm_p_value"] > 0.001  # no SRM detected
+
     # Dashboard should return results
     r = api("GET", f"/results/{exp_key}")
     assert r.status_code == 200
@@ -350,6 +359,7 @@ def test_full_pipeline_with_stats(exp_key="test_checkout"):
     assert data["status"] == "running"
     assert len(data["metrics"]) == 1
     assert data["metrics"][0]["metric_name"] == "Purchase Rate"
+    assert data["srm_p_value"] is not None
 
 
 def main():

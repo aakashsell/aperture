@@ -5,7 +5,7 @@ import logging
 import psycopg2
 from psycopg2.extras import RealDictCursor
 import numpy as np
-from stats import compute_experiment_stats
+from stats import compute_experiment_stats, srm_test
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("worker")
@@ -97,6 +97,7 @@ def compute_stats(conn):
 
         control_values = None
         variant_data = {}
+        variant_counts = []
         for v in variants:
             with conn.cursor() as cur:
                 cur.execute("""
@@ -106,11 +107,17 @@ def compute_stats(conn):
                 vals = [r[0] for r in cur.fetchall()]
             arr = np.array(vals, dtype=float)
             variant_data[v["id"]] = arr
+            variant_counts.append(len(arr))
             if v["is_control"]:
                 control_values = arr
 
         if control_values is None or len(control_values) == 0:
             continue
+
+        # Compute SRM once per experiment using current metric's exposure counts
+        srm_p = srm_test(variant_counts)
+        with conn.cursor() as cur:
+            cur.execute("UPDATE experiments SET srm_p_value = %s WHERE id = %s", (srm_p, exp_id))
 
         for v in variants:
             treatment = variant_data.get(v["id"], np.array([]))
@@ -121,8 +128,8 @@ def compute_stats(conn):
                 cur.execute("""
                     INSERT INTO experiment_results
                         (experiment_id, metric_id, variant_id, sample_size, mean,
-                         lift, lift_ci_lower, lift_ci_upper, p_value, updated_at)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+                         lift, lift_ci_lower, lift_ci_upper, p_value, mde, updated_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
                     ON CONFLICT (experiment_id, metric_id, variant_id) DO UPDATE SET
                         sample_size = EXCLUDED.sample_size,
                         mean = EXCLUDED.mean,
@@ -130,10 +137,12 @@ def compute_stats(conn):
                         lift_ci_lower = EXCLUDED.lift_ci_lower,
                         lift_ci_upper = EXCLUDED.lift_ci_upper,
                         p_value = EXCLUDED.p_value,
+                        mde = EXCLUDED.mde,
                         updated_at = NOW()
                 """, (
                     exp_id, metric_id, v["id"], stats["sample_size_t"], stats["mean_t"],
-                    stats["lift"], stats["lift_ci_lower"], stats["lift_ci_upper"], stats["p_value"],
+                    stats["lift"], stats["lift_ci_lower"], stats["lift_ci_upper"],
+                    stats["p_value"], stats["mde"],
                 ))
         conn.commit()
     logger.info("Stats computed for %d experiments", len(experiments))

@@ -32,6 +32,8 @@ export default function ExperimentDetail() {
 
   if (!data) return <div className="p-8 text-gray-500">Loading...</div>;
 
+  const srmWarning = data.srm_p_value != null && data.srm_p_value < 0.001;
+
   return (
     <div className="max-w-5xl mx-auto p-8">
       <a href="/" className="text-sm text-gray-500 hover:text-gray-800">← Back</a>
@@ -60,6 +62,13 @@ export default function ExperimentDetail() {
         )}
       </div>
 
+      {srmWarning && (
+        <div className="bg-red-100 border border-red-300 text-red-800 rounded-xl p-4 mb-6">
+          <p className="font-semibold">⚠️ Sample Ratio Mismatch Detected</p>
+          <p className="text-sm">Variant assignment is significantly unbalanced (p = {(data.srm_p_value * 100).toFixed(4)}%). Check your randomization logic.</p>
+        </div>
+      )}
+
       <div className="space-y-6">
         {data.metrics?.map((m: any) => (
           <div key={m.metric_id} className="bg-white border rounded-xl p-6">
@@ -77,6 +86,9 @@ export default function ExperimentDetail() {
                   <p className="text-xs text-gray-500 uppercase font-medium mb-1">Control</p>
                   <p className="text-2xl font-bold">{fmtVal(m.control.mean, m.metric_type)}</p>
                   <p className="text-sm text-gray-500">{m.control.sample_size?.toLocaleString()} users</p>
+                  {m.control.mde != null && (
+                    <p className="text-xs text-gray-400 mt-1">MDE: {fmtPct(m.control.mde)}</p>
+                  )}
                 </div>
               )}
               {m.treatments?.map((t: any) => (

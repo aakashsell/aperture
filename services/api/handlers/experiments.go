@@ -353,7 +353,8 @@ func GetResults(c *fiber.Ctx) error {
 
 	var expID int
 	var status string
-	err = db.Pool.QueryRow(ctx, `SELECT id, status FROM experiments WHERE project_id = $1 AND key = $2`, *projectID, key).Scan(&expID, &status)
+	var srmPValue *float64
+	err = db.Pool.QueryRow(ctx, `SELECT id, status, srm_p_value FROM experiments WHERE project_id = $1 AND key = $2`, *projectID, key).Scan(&expID, &status, &srmPValue)
 	if err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": "experiment not found"})
 	}
@@ -411,12 +412,13 @@ func GetResults(c *fiber.Ctx) error {
 				CILower    *float64
 				CIUpper    *float64
 				PValue     *float64
+				MDE        *float64
 			}
 			err := db.Pool.QueryRow(ctx, `
-				SELECT sample_size, mean, lift, lift_ci_lower, lift_ci_upper, p_value
+				SELECT sample_size, mean, lift, lift_ci_lower, lift_ci_upper, p_value, mde
 				FROM experiment_results WHERE experiment_id = $1 AND metric_id = $2 AND variant_id = $3`,
 				expID, m.id, vid,
-			).Scan(&r.SampleSize, &r.Mean, &r.Lift, &r.CILower, &r.CIUpper, &r.PValue)
+			).Scan(&r.SampleSize, &r.Mean, &r.Lift, &r.CILower, &r.CIUpper, &r.PValue, &r.MDE)
 			if err != nil && err != pgx.ErrNoRows {
 				continue
 			}
@@ -427,6 +429,7 @@ func GetResults(c *fiber.Ctx) error {
 			if r.CILower != nil { entry["lift_ci_lower"] = *r.CILower }
 			if r.CIUpper != nil { entry["lift_ci_upper"] = *r.CIUpper }
 			if r.PValue != nil { entry["p_value"] = *r.PValue }
+			if r.MDE != nil { entry["mde"] = *r.MDE }
 
 			if v["is_control"].(bool) {
 				control = entry
@@ -440,6 +443,6 @@ func GetResults(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(fiber.Map{
-		"experiment_key": key, "status": status, "metrics": outMetrics,
+		"experiment_key": key, "status": status, "srm_p_value": srmPValue, "metrics": outMetrics,
 	})
 }

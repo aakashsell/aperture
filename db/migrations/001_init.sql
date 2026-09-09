@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS experiments (
     primary_metric_id INTEGER,
     activation_event TEXT,
     allocated_percentage INTEGER NOT NULL DEFAULT 100,
+    srm_p_value DOUBLE PRECISION,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW(),
     UNIQUE(project_id, key)
@@ -112,6 +113,7 @@ CREATE TABLE IF NOT EXISTS experiment_results (
     lift_ci_lower DOUBLE PRECISION,
     lift_ci_upper DOUBLE PRECISION,
     p_value DOUBLE PRECISION,
+    mde DOUBLE PRECISION,
     updated_at TIMESTAMPTZ DEFAULT NOW(),
     UNIQUE(experiment_id, metric_id, variant_id)
 );
