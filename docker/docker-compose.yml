@@ -1,0 +1,70 @@
+version: "3.8"
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: aperture
+      POSTGRES_PASSWORD: aperture
+      POSTGRES_DB: aperture
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aperture"]
+      interval: 2s
+      timeout: 5s
+      retries: 5
+
+  migrate:
+    image: golang:1.22-alpine
+    environment:
+      DATABASE_URL: postgresql://aperture:aperture@db:5432/aperture
+    volumes:
+      - ../db/migrations:/migrations
+      - ../scripts:/scripts
+    working_dir: /scripts
+    entrypoint: ["sh", "/scripts/migrate.sh"]
+    depends_on:
+      db:
+        condition: service_healthy
+
+  api:
+    build: ../services/api
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql://aperture:aperture@db:5432/aperture
+      PORT: 8000
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8000/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  worker:
+    build: ../worker
+    environment:
+      DATABASE_URL: postgresql://aperture:aperture@db:5432/aperture
+      WORKER_INTERVAL_SECONDS: 30
+    depends_on:
+      - migrate
+
+  web:
+    build: ../services/web
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+    volumes:
+      - ../services/web:/app
+      - /app/node_modules
+    depends_on:
+      - api
+
+volumes:
+  pgdata:
