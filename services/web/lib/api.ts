@@ -1,4 +1,6 @@
-const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const API = typeof window !== 'undefined'
+  ? '/api'
+  : (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000");
 
 async function get(path: string) {
   const res = await fetch(`${API}${path}`, { cache: "no-store" });

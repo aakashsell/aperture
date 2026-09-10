@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"strconv"
+	"strings"
 )
 
 // Config holds all API service configuration.
@@ -39,9 +40,12 @@ func intEnv(key string, fallback int) int {
 }
 
 func readVersion() string {
-	b, err := os.ReadFile("VERSION")
-	if err != nil {
-		return "dev"
+	paths := []string{"VERSION", "../../VERSION", "../../../VERSION"}
+	for _, p := range paths {
+		b, err := os.ReadFile(p)
+		if err == nil {
+			return strings.TrimSpace(string(b))
+		}
 	}
-	return string(b)
+	return "dev"
 }

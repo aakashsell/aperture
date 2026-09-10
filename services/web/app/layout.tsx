@@ -1,3 +1,5 @@
+import './globals.css'
+
 export const metadata = {
   title: 'Aperture — Experimentation',
   description: 'Open-source A/B testing for startups',
