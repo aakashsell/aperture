@@ -6,27 +6,21 @@ async function get(path: string) {
   return res.json();
 }
 
-export async function fetchExperiments() {
-  return get("/experiments") ?? [];
-}
-
-export async function fetchExperiment(key: string) {
-  return get(`/results/${key}`);
-}
-
-export async function createExperiment(data: unknown) {
-  const res = await fetch(`${API}/experiments`, {
+async function post(path: string, body?: unknown) {
+  const res = await fetch(`${API}${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(data),
+    body: body ? JSON.stringify(body) : undefined,
   });
-  return res.ok;
+  return res.ok ? await res.json() : null;
 }
 
-export async function startExperiment(key: string) {
-  return fetch(`${API}/experiments/${key}/start`, { method: "POST" });
-}
-
-export async function pauseExperiment(key: string) {
-  return fetch(`${API}/experiments/${key}/pause`, { method: "POST" });
-}
+export const fetchExperiments = async () => get("/experiments") ?? [];
+export const fetchExperiment = async (key: string) => get(`/results/${key}`);
+export const createExperiment = async (data: unknown) => post("/experiments", data);
+export const startExperiment = async (key: string) => fetch(`${API}/experiments/${key}/start`, { method: "POST" });
+export const pauseExperiment = async (key: string) => fetch(`${API}/experiments/${key}/pause`, { method: "POST" });
+export const fetchMetrics = async () => get("/metrics") ?? [];
+export const createMetric = async (data: unknown) => post("/metrics", data);
+export const linkMetric = async (expKey: string, metricId: number, isPrimary: boolean) =>
+  post(`/experiments/${expKey}/metrics`, { metric_id: metricId, is_primary: isPrimary });
