@@ -4,14 +4,14 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { fetchExperiment, pauseExperiment } from "@/lib/api";
 
-function fmtVal(v: number, type: string) {
-  if (v == null) return "—";
+function fmt(v: number, type: string) {
+  if (v == null || isNaN(v)) return "—";
   if (type === "binary") return `${(v * 100).toFixed(1)}%`;
   return v.toLocaleString(undefined, { maximumFractionDigits: 2 });
 }
 
 function fmtPct(v: number) {
-  if (v == null) return "—";
+  if (v == null || isNaN(v)) return "—";
   return `${(v * 100).toFixed(1)}%`;
 }
 
@@ -25,108 +25,170 @@ function verdict(t: any) {
 export default function ExperimentDetail() {
   const { key } = useParams();
   const [data, setData] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (key) fetchExperiment(key as string).then(setData);
+    if (key) {
+      setLoading(true);
+      fetchExperiment(key as string).then((d) => {
+        setData(d);
+        setLoading(false);
+      });
+    }
   }, [key]);
 
-  if (!data) return <div className="p-8 text-gray-500">Loading...</div>;
+  if (loading) return <div className="max-w-4xl mx-auto p-8 text-slate-400 text-sm">Loading...</div>;
+  if (!data) return <div className="max-w-4xl mx-auto p-8 text-slate-500">Not found</div>;
 
+  const expKey = data.experiment_key;
+  const status = data.status;
   const srmWarning = data.srm_p_value != null && data.srm_p_value < 0.001;
+  const primaryMetric = data.metrics?.find((m: any) => m.is_primary);
+  const treatment = primaryMetric?.treatments?.[0];
+  const v = verdict(treatment);
+  const hasResults = data.metrics?.some((m: any) => m.control?.mean != null);
 
   return (
-    <div className="max-w-5xl mx-auto p-8">
-      <a href="/" className="text-sm text-gray-500 hover:text-gray-800">← Back</a>
-      <div className="flex items-center justify-between mt-4 mb-8">
-        <div>
-          <h1 className="text-2xl font-bold">{data.experiment_key}</h1>
-          <span className={`inline-block mt-2 text-xs font-medium px-2.5 py-1 rounded-full ${
-            data.status === "running" ? "bg-green-200 text-green-800" :
-            data.status === "paused" ? "bg-yellow-200 text-yellow-800" :
-            data.status === "completed" ? "bg-blue-200 text-blue-800" :
-            "bg-gray-200 text-gray-700"
-          }`}>
-            {data.status}
-          </span>
+    <div className="min-h-screen bg-slate-50">
+      {/* Top nav */}
+      <nav className="bg-white border-b border-slate-200">
+        <div className="max-w-4xl mx-auto px-6 h-14 flex items-center justify-between">
+          <a href="/" className="flex items-center gap-3">
+            <div className="w-7 h-7 bg-slate-900 rounded-md flex items-center justify-center text-white font-bold text-xs">A</div>
+            <span className="font-semibold text-slate-900 text-sm">Aperture</span>
+          </a>
+          <span className="text-xs text-slate-400">{expKey}</span>
         </div>
-        {data.status === "running" && (
-          <button
-            onClick={async () => {
-              await pauseExperiment(data.experiment_key);
-              fetchExperiment(data.experiment_key).then(setData);
-            }}
-            className="text-sm bg-yellow-600 text-white px-4 py-2 rounded-lg font-medium"
-          >
-            Pause
-          </button>
+      </nav>
+
+      <div className="max-w-4xl mx-auto px-6 py-8">
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h1 className="text-2xl font-bold text-slate-900">{expKey}</h1>
+            <span className={`inline-block mt-1.5 text-xs font-medium px-2.5 py-1 rounded-full ${
+              status === "running" ? "bg-green-100 text-green-700" :
+              status === "paused" ? "bg-amber-100 text-amber-700" :
+              status === "completed" ? "bg-blue-100 text-blue-700" :
+              "bg-slate-100 text-slate-600"
+            }`}>
+              {status}
+            </span>
+          </div>
+          {status === "running" && (
+            <button
+              onClick={async () => {
+                await pauseExperiment(expKey);
+                fetchExperiment(expKey).then(setData);
+              }}
+              className="text-sm bg-amber-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-amber-700"
+            >
+              Pause
+            </button>
+          )}
+        </div>
+
+        {srmWarning && (
+          <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl p-4 mb-6">
+            <p className="font-semibold text-sm">⚠️ Sample Ratio Mismatch</p>
+            <p className="text-xs mt-1">Randomization looks broken. Check your hash function.</p>
+          </div>
         )}
-      </div>
 
-      {srmWarning && (
-        <div className="bg-red-100 border border-red-300 text-red-800 rounded-xl p-4 mb-6">
-          <p className="font-semibold">⚠️ Sample Ratio Mismatch Detected</p>
-          <p className="text-sm">Variant assignment is significantly unbalanced (p = {(data.srm_p_value * 100).toFixed(4)}%). Check your randomization logic.</p>
+        {/* Code setup */}
+        <div className="bg-white border border-slate-200 rounded-xl mb-6 overflow-hidden">
+          <div className="px-5 py-3 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
+            <span className="text-xs font-semibold text-slate-500 uppercase">SDK</span>
+            <span className="text-xs text-slate-400">npm install @aperture/sdk</span>
+          </div>
+          <pre className="p-5 text-xs font-mono bg-slate-950 text-slate-100 overflow-x-auto leading-relaxed">
+{`import { Aperture } from "@aperture/sdk";
+
+const ap = new Aperture({ apiUrl: "http://localhost:8000" });
+
+// 1. Get variant (zero latency)
+const variant = ap.getVariant("${expKey}", user.id);
+
+// 2. Use it
+if (variant === "treatment") renderNew();
+
+// 3. Record exposure
+ap.expose("${expKey}", user.id);
+
+// 4. Track conversion
+ap.track(evtId, user.id, "purchase", 49.99);`}
+          </pre>
         </div>
-      )}
 
-      <div className="space-y-6">
-        {data.metrics?.map((m: any) => (
-          <div key={m.metric_id} className="bg-white border rounded-xl p-6">
-            <div className="flex items-center gap-2 mb-4">
-              <h2 className="font-semibold">{m.metric_name}</h2>
-              {m.is_primary && (
-                <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-medium">Primary</span>
-              )}
-              <span className="text-xs text-gray-400 uppercase">{m.metric_type}</span>
+        {/* Results */}
+        {primaryMetric && (
+          <div className="bg-white border border-slate-200 rounded-xl mb-6">
+            <div className="px-5 py-4 border-b border-slate-100 flex items-center gap-2">
+              <h2 className="font-semibold text-slate-800">{primaryMetric.metric_name}</h2>
+              <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-medium">Primary</span>
             </div>
 
-            <div className="grid grid-cols-2 gap-6 mb-6">
-              {m.control && (
-                <div className="bg-gray-50 rounded-lg p-4">
-                  <p className="text-xs text-gray-500 uppercase font-medium mb-1">Control</p>
-                  <p className="text-2xl font-bold">{fmtVal(m.control.mean, m.metric_type)}</p>
-                  <p className="text-sm text-gray-500">{m.control.sample_size?.toLocaleString()} users</p>
-                  {m.control.mde != null && (
-                    <p className="text-xs text-gray-400 mt-1">MDE: {fmtPct(m.control.mde)}</p>
+            <div className="p-5 grid grid-cols-2 gap-6">
+              {primaryMetric.control && (
+                <div>
+                  <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Control</p>
+                  <p className="text-3xl font-bold text-slate-900 mt-2">{fmt(primaryMetric.control.mean, primaryMetric.metric_type)}</p>
+                  <p className="text-sm text-slate-500 mt-1">{primaryMetric.control.sample_size?.toLocaleString()} users</p>
+                  {primaryMetric.control.mde != null && (
+                    <p className="text-xs text-slate-400 mt-2">MDE: {fmtPct(primaryMetric.control.mde)}</p>
                   )}
                 </div>
               )}
-              {m.treatments?.map((t: any) => (
-                <div key={t.variant} className="bg-gray-50 rounded-lg p-4">
-                  <p className="text-xs text-gray-500 uppercase font-medium mb-1">{t.variant}</p>
-                  <p className="text-2xl font-bold">{fmtVal(t.mean, m.metric_type)}</p>
-                  <p className="text-sm text-gray-500">{t.sample_size?.toLocaleString()} users</p>
-                  {t.lift != null && (
-                    <div className="mt-2">
-                      <p className={`text-lg font-semibold ${t.lift > 0 ? "text-green-600" : t.lift < 0 ? "text-red-600" : "text-gray-600"}`}>
-                        {t.lift > 0 ? "+" : ""}{fmtPct(t.lift)} lift
-                      </p>
-                      <p className="text-xs text-gray-500">[{fmtPct(t.lift_ci_lower)}, {fmtPct(t.lift_ci_upper)}]</p>
-                      {t.p_value != null && (
-                        <p className="text-xs text-gray-400 mt-1">p = {t.p_value.toFixed(3)}</p>
-                      )}
-                    </div>
-                  )}
+              {treatment && (
+                <div>
+                  <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide">{treatment.variant}</p>
+                  <p className="text-3xl font-bold text-slate-900 mt-2">{fmt(treatment.mean, primaryMetric.metric_type)}</p>
+                  <p className="text-sm text-slate-500 mt-1">{treatment.sample_size?.toLocaleString()} users</p>
                 </div>
-              ))}
+              )}
             </div>
 
-            {m.is_primary && m.treatments?.[0] && (
-              <div className={`text-sm font-medium px-4 py-2.5 rounded-lg ${
-                verdict(m.treatments[0]) === "favors_treatment" ? "bg-green-100 text-green-800" :
-                verdict(m.treatments[0]) === "favors_control" ? "bg-red-100 text-red-800" :
-                "bg-gray-100 text-gray-700"
-              }`}>
-                {verdict(m.treatments[0]) === "favors_treatment" && "🟢 Evidence favors treatment"}
-                {verdict(m.treatments[0]) === "favors_control" && "🔴 Evidence favors control"}
-                {verdict(m.treatments[0]) === "inconclusive" && "🟡 Inconclusive"}
+            {treatment?.lift != null && (
+              <div className="px-5 pb-5">
+                <div className="border-t border-slate-100 pt-5">
+                  <div className="flex items-baseline gap-3">
+                    <span className={`text-2xl font-bold ${
+                      v === "favors_treatment" ? "text-green-600" :
+                      v === "favors_control" ? "text-red-600" :
+                      "text-slate-600"
+                    }`}>
+                      {treatment.lift > 0 ? "+" : ""}{fmtPct(treatment.lift)}
+                    </span>
+                    <span className="text-sm text-slate-400">
+                      [{fmtPct(treatment.lift_ci_lower)}, {fmtPct(treatment.lift_ci_upper)}]
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-3 mt-3">
+                    <span className={`text-sm font-medium px-3 py-1.5 rounded-lg ${
+                      v === "favors_treatment" ? "bg-green-100 text-green-700" :
+                      v === "favors_control" ? "bg-red-100 text-red-700" :
+                      "bg-slate-100 text-slate-600"
+                    }`}>
+                      {v === "favors_treatment" && "Likely winner"}
+                      {v === "favors_control" && "Control winning"}
+                      {v === "inconclusive" && "Inconclusive"}
+                    </span>
+                    {treatment.mde != null && (
+                      <span className={`text-xs ${Math.abs(treatment.lift) < treatment.mde ? "text-amber-600 font-medium" : "text-slate-400"}`}>
+                        {Math.abs(treatment.lift) < treatment.mde ? "Underpowered" : "Powered"}
+                      </span>
+                    )}
+                  </div>
+                </div>
               </div>
             )}
           </div>
-        ))}
+        )}
 
-        {(!data.metrics || data.metrics.length === 0) && (
-          <p className="text-gray-500 text-sm">No metrics linked. Link a metric to see results.</p>
+        {!hasResults && (
+          <div className="bg-white border border-dashed border-slate-200 rounded-xl p-8 text-center">
+            <p className="text-slate-500 text-sm font-medium">No data yet</p>
+            <p className="text-slate-400 text-xs mt-1">Wire up the SDK and send events. Results appear after the worker runs.</p>
+          </div>
         )}
       </div>
     </div>

@@ -33,6 +33,8 @@ func main() {
 	app.Get("/experiments", handlers.ListExperiments)
 	app.Post("/experiments", handlers.CreateExperiment)
 	app.Get("/experiments/:key/variants", handlers.GetVariants)
+	app.Get("/experiments/:key/config", handlers.GetExperimentConfig)
+	app.Get("/experiments/:key/assign", handlers.GetAssignUser)
 	app.Post("/experiments/:key/assign", handlers.AssignUser)
 	app.Post("/experiments/:key/expose", handlers.ExposeUser)
 	app.Post("/experiments/:key/start", handlers.StartExperiment)
@@ -46,6 +48,7 @@ func main() {
 
 	// Events
 	app.Post("/events/track", handlers.TrackEvent)
+	app.Post("/events/batch", handlers.TrackEventsBatch)
 
 	// Results
 	app.Get("/results/:key", handlers.GetResults)

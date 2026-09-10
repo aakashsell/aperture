@@ -10,6 +10,20 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
+// ExperimentConfig is the lightweight config needed for client-side evaluation.
+type ExperimentConfig struct {
+	Key                 string              `json:"key"`
+	Status              string              `json:"status"`
+	AllocatedPercentage int                 `json:"allocated_percentage"`
+	Variants            []VariantConfig     `json:"variants"`
+}
+
+type VariantConfig struct {
+	Key        string `json:"key"`
+	Allocation int    `json:"allocation"`
+	IsControl  bool   `json:"is_control"`
+}
+
 func ListExperiments(c *fiber.Ctx) error {
 	ctx := context.Background()
 	projectID, err := assignment.GetDefaultProject(ctx)
@@ -120,6 +134,43 @@ func GetVariants(c *fiber.Ctx) error {
 	return c.JSON(out)
 }
 
+// GetExperimentConfig serves lightweight config for client-side evaluation.
+func GetExperimentConfig(c *fiber.Ctx) error {
+	ctx := context.Background()
+	projectID, err := assignment.GetDefaultProject(ctx)
+	if err != nil {
+		return c.Status(404).JSON(fiber.Map{"error": "no project"})
+	}
+	key := c.Params("key")
+
+	var exp ExperimentConfig
+	exp.Key = key
+	err = db.Pool.QueryRow(ctx,
+		`SELECT status, allocated_percentage FROM experiments WHERE project_id = $1 AND key = $2`,
+		*projectID, key,
+	).Scan(&exp.Status, &exp.AllocatedPercentage)
+	if err != nil {
+		return c.Status(404).JSON(fiber.Map{"error": "experiment not found"})
+	}
+
+	rows, err := db.Pool.Query(ctx,
+		`SELECT v.key, v.allocation, v.is_control FROM variants v JOIN experiments e ON e.id = v.experiment_id WHERE e.project_id = $1 AND e.key = $2`,
+		*projectID, key,
+	)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var vc VariantConfig
+		rows.Scan(&vc.Key, &vc.Allocation, &vc.IsControl)
+		exp.Variants = append(exp.Variants, vc)
+	}
+
+	return c.JSON(exp)
+}
+
 func AssignUser(c *fiber.Ctx) error {
 	ctx := context.Background()
 	projectID, err := assignment.GetDefaultProject(ctx)
@@ -182,6 +233,38 @@ func ExposeUser(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(fiber.Map{"exposed": true, "variant": variant.Key})
+}
+
+// GET /experiments/:key/assign?user_id=xxx — cacheable assignment lookup
+func GetAssignUser(c *fiber.Ctx) error {
+	ctx := context.Background()
+	projectID, err := assignment.GetDefaultProject(ctx)
+	if err != nil {
+		return c.Status(404).JSON(fiber.Map{"error": "no project"})
+	}
+	key := c.Params("key")
+	userID := c.Query("user_id")
+	if userID == "" {
+		return c.Status(400).JSON(fiber.Map{"error": "user_id required"})
+	}
+
+	var expID int
+	var expKey string
+	err = db.Pool.QueryRow(ctx, `SELECT id, key FROM experiments WHERE project_id = $1 AND key = $2`, *projectID, key).Scan(&expID, &expKey)
+	if err != nil {
+		return c.Status(404).JSON(fiber.Map{"error": "experiment not found"})
+	}
+
+	variant, err := assignment.GetVariant(ctx, expID, expKey, userID)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	c.Set("Cache-Control", "public, max-age=300")
+	if variant == nil {
+		return c.JSON(fiber.Map{"experiment_key": key, "variant": nil, "assigned": false})
+	}
+	return c.JSON(fiber.Map{"experiment_key": key, "variant": variant.Key, "assigned": true})
 }
 
 func StartExperiment(c *fiber.Ctx) error {
@@ -341,6 +424,41 @@ func TrackEvent(c *fiber.Ctx) error {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 	return c.JSON(fiber.Map{"ingested": true})
+}
+
+// TrackEventsBatch handles batched event ingestion.
+func TrackEventsBatch(c *fiber.Ctx) error {
+	ctx := context.Background()
+	projectID, err := assignment.GetDefaultProject(ctx)
+	if err != nil {
+		return c.Status(404).JSON(fiber.Map{"error": "no project"})
+	}
+
+	var body struct {
+		Events []struct {
+			EventID    string                 `json:"event_id"`
+			UserID     string                 `json:"user_id"`
+			EventName  string                 `json:"event_name"`
+			Value      *float64               `json:"value"`
+			Properties map[string]interface{} `json:"properties"`
+			Timestamp  *string                `json:"timestamp"`
+		} `json:"events"`
+	}
+	c.BodyParser(&body)
+
+	for _, ev := range body.Events {
+		var ts interface{}
+		if ev.Timestamp != nil {
+			ts = *ev.Timestamp
+		}
+		db.Pool.Exec(ctx, `
+			INSERT INTO events (project_id, event_id, user_id, event_name, value, properties, timestamp)
+			VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7, NOW()))
+			ON CONFLICT (project_id, event_id) DO NOTHING`,
+			*projectID, ev.EventID, ev.UserID, ev.EventName, ev.Value, ev.Properties, ts,
+		)
+	}
+	return c.JSON(fiber.Map{"ingested": len(body.Events)})
 }
 
 func GetResults(c *fiber.Ctx) error {

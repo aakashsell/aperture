@@ -1,21 +1,26 @@
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
-export async function fetchExperiments() {
-  const res = await fetch(`${API}/experiments`, { next: { revalidate: 5 } });
+async function get(path: string) {
+  const res = await fetch(`${API}${path}`, { cache: "no-store" });
+  if (!res.ok) return null;
   return res.json();
+}
+
+export async function fetchExperiments() {
+  return get("/experiments") ?? [];
 }
 
 export async function fetchExperiment(key: string) {
-  const res = await fetch(`${API}/results/${key}`, { cache: "no-store" });
-  return res.json();
+  return get(`/results/${key}`);
 }
 
 export async function createExperiment(data: unknown) {
-  return fetch(`${API}/experiments`, {
+  const res = await fetch(`${API}/experiments`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
   });
+  return res.ok;
 }
 
 export async function startExperiment(key: string) {
