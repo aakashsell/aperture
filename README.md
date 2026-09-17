@@ -67,6 +67,19 @@ make dev
 
 Requires Docker with Compose. Open http://localhost:3000 for the landing page, `/demo` for a labeled simulation, or `/app` to create an account and workspace. No default project or shared account is seeded. Existing ownerless projects are retained but require an administrator to assign an owner using `scripts/assign-owner.sql` after the owner registers.
 
+## Public deployment with Dokploy
+
+The landing page and product app are separate Compose deployments from this repository, so they can be released and scaled independently while sharing the same codebase:
+
+| Dokploy deployment | Compose file | Services |
+|---|---|---|
+| `aperture-core` | `docker-compose.production.yml` | App UI, API, Postgres, migrations, and worker |
+| `aperture-site` | `docker-compose.site.yml` | Public landing page and interactive demo |
+
+Create both Compose deployments in the same Dokploy project and connect them to the `main` branch of this GitHub repository. Configure the app deployment's domain to target service `app` on port `3000`; configure the marketing domain to target service `landing` on port `3000`. Set `POSTGRES_PASSWORD` and a random 32-byte-or-longer `JWT_SECRET` as secrets on the core deployment. Set `APP_URL` on the site deployment to the public app origin (for example, `https://app.example.com`). Keep the database service private; only Dokploy's domain router should expose the app and landing services. A persistent `aperture-data` volume stores Postgres data.
+
+The public landing service serves `/` and `/demo`; app routes sent to it redirect to the separately hosted app. The app service serves `/app` and its management API proxy. Both Compose files build the production Next.js image, while the core's `app` service can be scaled separately from the landing service, API, worker, and database.
+
 For local development without Docker, create a Postgres database named `aperture`, then run `./scripts/dev-local.sh`. Requires Go 1.22+, Node 20+, Python 3.12, and Postgres 15+. The script creates a Python virtual environment and starts all three services.
 
 ## Connect an app

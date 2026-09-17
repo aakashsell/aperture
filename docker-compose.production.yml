@@ -61,12 +61,13 @@ services:
       migrate:
         condition: service_completed_successfully
 
-  web:
+  app:
     build:
       context: ./services/web
     restart: unless-stopped
     environment:
       API_URL: http://api:8000
+      APERTURE_SURFACE: app
       PORT: 3000
       HOSTNAME: 0.0.0.0
     expose:

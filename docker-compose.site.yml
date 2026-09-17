@@ -1,0 +1,20 @@
+name: aperture-site
+
+services:
+  landing:
+    build:
+      context: ./services/web
+    restart: unless-stopped
+    environment:
+      APERTURE_SURFACE: landing
+      APP_URL: ${APP_URL:?Set APP_URL to the public Aperture app URL in Dokploy}
+      PORT: 3000
+      HOSTNAME: 0.0.0.0
+    expose:
+      - "3000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
