@@ -8,6 +8,9 @@ import {
   Terminal,
 } from "lucide-react";
 import Link from "next/link";
+
+export const dynamic = "force-dynamic";
+
 export default function Landing() {
   return (
     <div className="landing">
@@ -34,15 +37,14 @@ export default function Landing() {
             <span className="live-dot" /> BUILT FOR PEOPLE. READY FOR AGENTS.
           </div>
           <h1>
-            Ship safely. Learn what works.
+            A/B testing your coding agent can actually get right.
             <br />
-            <em>Trust every release.</em>
+            <em>Ship safely. Learn what works.</em>
           </h1>
           <p>
-            Roll a real change out to 5% of users, see whether it is healthy,
-            and expand it with confidence. Then test whether it is actually
-            better—all with one open-source layer built for you and your coding
-            agent.
+            Add trustworthy experiments to any app in minutes. Aperture handles
+            assignment, exposure, and measurement—and catches broken experiments
+            before they lead you to the wrong decision.
           </p>
           <div className="hero-actions">
             <Link href="/app" className="button">
