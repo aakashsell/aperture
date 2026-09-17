@@ -3,16 +3,15 @@ name: aperture-site
 services:
   landing:
     build:
-      context: ./services/web
+      context: ./services/landing
     restart: unless-stopped
-    environment:
-      APERTURE_SURFACE: landing
-      APP_URL: ${APP_URL:?Set APP_URL to the public Aperture app URL in Dokploy}
-      PORT: 3000
-      HOSTNAME: 0.0.0.0
+    depends_on:
+      web:
+        condition: service_healthy
     expose:
-      - "3000"
+      - "80"
     networks:
+      - default
       - dokploy-network
     labels:
       - "traefik.enable=true"
@@ -20,9 +19,27 @@ services:
       - "traefik.http.routers.aperture-site.priority=10000"
       - "traefik.http.routers.aperture-site.entrypoints=websecure"
       - "traefik.http.routers.aperture-site.tls.certResolver=letsencrypt"
-      - "traefik.http.services.aperture-site.loadbalancer.server.port=3000"
+      - "traefik.http.services.aperture-site.loadbalancer.server.port=80"
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/ | grep -q 'A/B testing your coding agent'"]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+      start_period: 5s
+
+  web:
+    build:
+      context: ./services/web
+    restart: unless-stopped
+    environment:
+      APERTURE_SURFACE: landing
+      APP_URL: https://aperture-app.bazement.net
+      PORT: 3000
+      HOSTNAME: 0.0.0.0
+    expose:
+      - "3000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/demo').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
       interval: 15s
       timeout: 5s
       retries: 6

@@ -74,11 +74,11 @@ The landing page and product app are separate Compose deployments from this repo
 | Dokploy deployment | Compose file | Services |
 |---|---|---|
 | `aperture-core` | `docker-compose.production.yml` | App UI, API, Postgres, migrations, and worker |
-| `aperture-site` | `docker-compose.site.yml` | Public landing page and interactive demo |
+| `aperture-site` | `docker-compose.site.yml` | Static landing page with the interactive Next.js demo behind it |
 
 Create both Compose deployments in the same Dokploy project and connect them to the `main` branch of this GitHub repository. Traefik labels route `aperture-app.bazement.net` to the app UI and `aperture.bazement.net` to the landing service, each on port `3000`. Set `POSTGRES_PASSWORD` and a random 32-byte-or-longer `JWT_SECRET` as secrets on the core deployment. Set `APP_URL=https://aperture-app.bazement.net` on the site deployment. Keep the database and API private; only the app UI and landing service are public. A persistent `aperture-data` volume stores Postgres data.
 
-The public landing service serves `/` and `/demo`; app routes sent to it redirect to the separately hosted app. The app service serves `/app` and its management API proxy. Both Compose files build the production Next.js image, while the core's `app` service can be scaled separately from the landing service, API, worker, and database.
+The site stack serves `/` from a small static Nginx container and proxies `/demo` to a private Next.js service. App routes sent to it redirect to the separately hosted app. The core stack serves `/app` and its management API proxy. The core's `app` service can be scaled separately from the site, API, worker, and database.
 
 For local development without Docker, create a Postgres database named `aperture`, then run `./scripts/dev-local.sh`. Requires Go 1.22+, Node 20+, Python 3.12, and Postgres 15+. The script creates a Python virtual environment and starts all three services.
 
