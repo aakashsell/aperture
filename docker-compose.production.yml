@@ -77,7 +77,7 @@ services:
       - dokploy-network
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.aperture-app.rule=Host(`${APP_DOMAIN:?Set APP_DOMAIN in Dokploy}`)"
+      - "traefik.http.routers.aperture-app.rule=Host(`aperture-app.bazement.net`)"
       - "traefik.http.routers.aperture-app.entrypoints=websecure"
       - "traefik.http.routers.aperture-app.tls.certResolver=letsencrypt"
       - "traefik.http.services.aperture-app.loadbalancer.server.port=3000"

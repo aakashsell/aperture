@@ -6,7 +6,7 @@ const path = require('node:path');
 const {Aperture} = require('../dist/index.js');
 const api = process.env.API_URL || 'http://localhost:8000';
 (async()=>{
- const registration=await fetch(api+'/auth/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:`sdk-${randomUUID()}@test.example`,password:'sdk-integration-password'})});
+ const registration=await fetch(api+'/auth/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:`sdk-${randomUUID()}@test.example`,password:`sdk-${randomUUID()}-${randomUUID()}`})});
  assert.equal(registration.status,200);
  const cookie=registration.headers.get('set-cookie').split(';')[0];
  const management=async(route,body)=>{const res=await fetch(api+route,{method:body?'POST':'GET',headers:{'Content-Type':'application/json',Cookie:cookie},body:body?JSON.stringify(body):undefined});assert.equal(res.status,200,await res.clone().text());return res.json();};
