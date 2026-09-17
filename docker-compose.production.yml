@@ -64,6 +64,8 @@ services:
   app:
     build:
       context: ./services/web
+      args:
+        API_URL: http://api:8000
     restart: unless-stopped
     environment:
       API_URL: http://api:8000
