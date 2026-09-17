@@ -38,3 +38,9 @@ Thumbs.db
 # Docker volumes
 pgdata/
 redisdata/
+
+# Local builds and browser-test artifacts
+bin/
+services/web/test-results/
+services/web/playwright-report/
+*.tsbuildinfo

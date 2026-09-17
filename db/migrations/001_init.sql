@@ -88,8 +88,8 @@ CREATE TABLE IF NOT EXISTS events (
     UNIQUE(project_id, event_id)
 );
 
-CREATE INDEX idx_events_project_user ON events(project_id, user_id, event_name, timestamp);
-CREATE INDEX idx_events_project_name ON events(project_id, event_name, timestamp);
+CREATE INDEX IF NOT EXISTS idx_events_project_user ON events(project_id, user_id, event_name, timestamp);
+CREATE INDEX IF NOT EXISTS idx_events_project_name ON events(project_id, event_name, timestamp);
 
 CREATE TABLE IF NOT EXISTS experiment_user_metrics (
     id BIGSERIAL PRIMARY KEY,

@@ -34,7 +34,7 @@ test-api:
 	cd services/api && go test ./...
 
 test-integration:
-	$(COMPOSE_TEST) up --build --abort-on-container-exit
+	$(COMPOSE_TEST) up --build --exit-code-from test-runner
 
 test-integration-clean:
 	$(COMPOSE_TEST) down -v

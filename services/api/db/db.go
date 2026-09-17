@@ -24,8 +24,9 @@ func Init() error {
 		return fmt.Errorf("parse config: %w", err)
 	}
 
-	config.MaxConns = 100
-	config.MinConns = 10
+	config.MaxConns = 20
+	config.ConnConfig.RuntimeParams["statement_timeout"] = "15000"
+	config.MinConns = 2
 	config.MaxConnLifetime = time.Hour
 	config.MaxConnIdleTime = 30 * time.Minute
 	config.HealthCheckPeriod = 5 * time.Minute
