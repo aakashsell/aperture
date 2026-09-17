@@ -17,6 +17,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.aperture-site.rule=Host(`aperture.bazement.net`)"
+      - "traefik.http.routers.aperture-site.priority=10000"
       - "traefik.http.routers.aperture-site.entrypoints=websecure"
       - "traefik.http.routers.aperture-site.tls.certResolver=letsencrypt"
       - "traefik.http.services.aperture-site.loadbalancer.server.port=3000"
