@@ -72,6 +72,15 @@ services:
       HOSTNAME: 0.0.0.0
     expose:
       - "3000"
+    networks:
+      - default
+      - dokploy-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.aperture-app.rule=Host(`${APP_DOMAIN:?Set APP_DOMAIN in Dokploy}`)"
+      - "traefik.http.routers.aperture-app.entrypoints=websecure"
+      - "traefik.http.routers.aperture-app.tls.certResolver=letsencrypt"
+      - "traefik.http.services.aperture-app.loadbalancer.server.port=3000"
     depends_on:
       api:
         condition: service_healthy
@@ -84,3 +93,7 @@ services:
 
 volumes:
   aperture-data:
+
+networks:
+  dokploy-network:
+    external: true
