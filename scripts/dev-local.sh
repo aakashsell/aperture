@@ -2,7 +2,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 export DATABASE_URL=${DATABASE_URL:-postgresql://localhost:5432/aperture?sslmode=disable}
-export JWT_SECRET=${JWT_SECRET:-local-development-only-secret-32-characters}
+export JWT_SECRET=${JWT_SECRET:-$(python3 -c 'import secrets; print(secrets.token_hex(32))')}
 export API_URL=${API_URL:-http://localhost:8000}
 export MIGRATIONS_DIR="$PWD/db/migrations"
 sh scripts/migrate.sh

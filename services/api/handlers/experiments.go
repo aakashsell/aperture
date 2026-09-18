@@ -73,7 +73,7 @@ func validateExperiment(b experimentInput) error {
 	return nil
 }
 func ListExperiments(c *fiber.Ctx) error {
-	rows, err := db.Pool.Query(c.Context(), `SELECT e.id,e.key,e.name,e.status,e.hypothesis,e.allocated_percentage,e.created_at,(SELECT count(*) FROM exposures x WHERE x.experiment_id=e.id) AS exposures,(SELECT max(updated_at) FROM experiment_results r WHERE r.experiment_id=e.id) AS results_updated_at FROM experiments e WHERE project_id=$1 ORDER BY created_at DESC`, auth.ProjectID(c))
+	rows, err := db.Pool.Query(c.Context(), `SELECT e.id,e.key,e.name,e.status,e.hypothesis,e.allocated_percentage,e.created_at,(SELECT count(*) FROM exposures x WHERE x.experiment_id=e.id) AS exposures,(SELECT max(updated_at) FROM experiment_results r WHERE r.experiment_id=e.id) AS results_updated_at FROM experiments e WHERE project_id=$1 AND status<>'archived' ORDER BY created_at DESC`, auth.ProjectID(c))
 	if err != nil {
 		return err
 	}
@@ -213,6 +213,34 @@ func ExposeUser(c *fiber.Ctx) error {
 func StartExperiment(c *fiber.Ctx) error   { return transition(c, "running") }
 func PauseExperiment(c *fiber.Ctx) error   { return transition(c, "paused") }
 func RolloutExperiment(c *fiber.Ctx) error { return transition(c, "completed") }
+func ArchiveExperiment(c *fiber.Ctx) error { return transition(c, "archived") }
+
+func DeleteExperiment(c *fiber.Ctx) error {
+	tx, err := db.Pool.Begin(c.Context())
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(c.Context())
+	var id int
+	var status string
+	err = tx.QueryRow(c.Context(), `SELECT id,status FROM experiments WHERE project_id=$1 AND key=$2 FOR UPDATE`, auth.ProjectID(c), c.Params("key")).Scan(&id, &status)
+	if err == pgx.ErrNoRows {
+		return fiber.NewError(404, "Experiment not found")
+	}
+	if err != nil {
+		return err
+	}
+	if status == "running" {
+		return fiber.NewError(409, "Pause or archive the experiment before deleting it")
+	}
+	if _, err = tx.Exec(c.Context(), `DELETE FROM experiments WHERE id=$1`, id); err != nil {
+		return err
+	}
+	if err = tx.Commit(c.Context()); err != nil {
+		return err
+	}
+	return c.JSON(fiber.Map{"deleted": true})
+}
 func transition(c *fiber.Ctx, target string) error {
 	tx, err := db.Pool.Begin(c.Context())
 	if err != nil {
@@ -256,6 +284,8 @@ func transition(c *fiber.Ctx, target string) error {
 			return fiber.NewError(400, "Select a valid rollout variant")
 		}
 		_, err = tx.Exec(c.Context(), `UPDATE experiments SET status='completed',completed_at=NOW(),winner_variant_id=$2,updated_at=NOW() WHERE id=$1`, id, winner)
+	} else if target == "archived" && status != "archived" {
+		_, err = tx.Exec(c.Context(), `UPDATE experiments SET status='archived',updated_at=NOW() WHERE id=$1`, id)
 	} else {
 		return fiber.NewError(409, "Invalid experiment transition")
 	}

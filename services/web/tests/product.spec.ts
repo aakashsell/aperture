@@ -1,6 +1,8 @@
 import { test, expect } from "@playwright/test";
 import { randomUUID } from "node:crypto";
 
+const testPassword = () => `test-${randomUUID()}-Password`;
+
 test("landing, demo scenarios, and mobile layout", async ({ page }) => {
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
@@ -37,6 +39,40 @@ test("landing, demo scenarios, and mobile layout", async ({ page }) => {
   expect(errors).toEqual([]);
 });
 
+test("public beta docs distinguish audience channels from rollout controls", async ({
+  page,
+}) => {
+  await page.goto("/docs");
+  await expect(
+    page.getByRole("heading", { name: "Beta groups and rollouts, explained." }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Connect an app in a few lines" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", {
+      name: "Make experiments part of how you build",
+    }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Log what actually happened" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", {
+      name: "Keep projects separate and manageable",
+    }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("A channel alone does not turn a feature on."),
+  ).toBeVisible();
+  await expect(
+    page.getByText(/set the rollout audience to 100%/),
+  ).toBeVisible();
+  await expect(
+    page.getByText("getAnonymousAllocation()", { exact: false }).first(),
+  ).toBeVisible();
+});
+
 test("create a Chrome extension rollout, start at 5%, and expand to 100%", async ({
   page,
 }) => {
@@ -50,20 +86,27 @@ test("create a Chrome extension rollout, start at 5%, and expand to 100%", async
   await page
     .getByLabel("Email address")
     .fill(`rollout-${randomUUID()}@test.example`);
-  await page
-    .getByLabel("Password", { exact: true })
-    .fill("browser-test-password-123");
+  await page.getByLabel("Password", { exact: true }).fill(testPassword());
   await page
     .getByRole("button", { name: "Create workspace", exact: true })
     .click();
   await expect(
     page.getByRole("heading", { name: "Start small. Expand with confidence." }),
   ).toBeVisible();
+  const supportID = `support-${randomUUID()}`;
+  await page.getByRole("button", { name: "Settings & setup" }).click();
+  await page.getByLabel("Channel name").fill("Beta testers");
+  await page.getByLabel("Allocation type").selectOption("installation");
+  await page.getByLabel("Allowlisted IDs, one per line").fill(supportID);
+  await page.getByRole("button", { name: "Create channel" }).click();
+  await expect(page.getByText(/beta-testers · installation/)).toBeVisible();
+  await page.getByRole("link", { name: /Rollouts/ }).click();
   await page.getByRole("button", { name: "New rollout" }).click();
   await page.getByLabel("Rollout name").fill("New sync engine");
   await page
     .getByLabel("What is changing?")
     .fill("Release the real Chrome extension sync change safely.");
+  await page.getByLabel("Release channel").selectOption("beta-testers");
   await page.getByRole("button", { name: "Create rollout" }).click();
   await expect(
     page.getByRole("heading", { name: "New sync engine" }),
@@ -81,15 +124,116 @@ test("create a Chrome extension rollout, start at 5%, and expand to 100%", async
   ).toBeVisible();
   await page.getByRole("button", { name: "Confirm change" }).click();
   await expect(page.getByText("100% live")).toBeVisible();
+  await page.getByLabel("installation ID").fill(supportID);
+  await page.getByRole("button", { name: "Check override" }).click();
+  await expect(page.getByText("No support override is set.")).toBeVisible();
+  await page.getByRole("button", { name: "What would this ID get?" }).click();
+  await expect(
+    page.getByText(/Would receive enabled · channel allowlist/),
+  ).toBeVisible();
+  await page.getByLabel("installation ID").fill(`not-in-beta-${randomUUID()}`);
+  await page.getByRole("button", { name: "What would this ID get?" }).click();
+  await expect(
+    page.getByText(/Would receive current · channel not eligible/),
+  ).toBeVisible();
+  await page.getByLabel("installation ID").fill(supportID);
+  await page.getByRole("button", { name: "Force off" }).click();
+  await expect(
+    page.getByText("This installation is forced off."),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "What would this ID get?" }).click();
+  await expect(
+    page.getByText(/Would receive current · support override/),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Settings & setup" }).click();
+  const publishableKey = await page
+    .getByLabel("Publishable integration key")
+    .inputValue();
+  const decision = await page.evaluate(
+    async ({ key, id }) =>
+      fetch("/api/gates/new-sync-engine/evaluate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-API-Key": key },
+        body: JSON.stringify({ allocation: { kind: "installation", id } }),
+      }).then((response) => response.json()),
+    { key: publishableKey, id: supportID },
+  );
+  expect(decision.enabled).toBe(false);
+  expect(decision.reason).toBe("support_override");
+  await page.goto("/app/rollouts/new-sync-engine");
+  await page.getByLabel("installation ID").fill(supportID);
+  await page.getByRole("button", { name: "Check override" }).click();
+  await page.getByRole("button", { name: "Remove override" }).click();
+  await expect(page.getByText("No support override is set.")).toBeVisible();
   await page.screenshot({ path: "/tmp/aperture-rollout.png", fullPage: true });
   await page.getByRole("button", { name: "Turn off rollout" }).click();
   await page.getByRole("button", { name: "Confirm change" }).click();
   await expect(page.getByText("Off", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Delete permanently" }).click();
+  await page.getByLabel("Rollout key").fill("new-sync-engine");
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Delete permanently" })
+    .click();
+  await expect(page).toHaveURL(/\/app$/);
+  await expect(page.getByText("New sync engine", { exact: true })).toHaveCount(
+    0,
+  );
   await page.setViewportSize({ width: 390, height: 844 });
   expect(
     await page.evaluate(() => document.documentElement.scrollWidth),
   ).toBeLessThanOrEqual(390);
   expect(errors).toEqual([]);
+});
+
+test("create and switch between isolated workspaces", async ({ page }) => {
+  await page.goto("/app");
+  await page
+    .getByRole("button", { name: "New to Aperture? Create a workspace" })
+    .click();
+  await page.getByLabel("Workspace name").fill("Primary project");
+  await page
+    .getByLabel("Email address")
+    .fill(`workspace-${randomUUID()}@test.example`);
+  await page.getByLabel("Password", { exact: true }).fill(testPassword());
+  await page
+    .getByRole("button", { name: "Create workspace", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Settings & setup" }).click();
+  await page.getByLabel("Create another workspace").fill("Marketing site");
+  await page
+    .getByRole("button", { name: "Create workspace", exact: true })
+    .click();
+  await expect(
+    page.getByRole("combobox", { name: "Switch workspace" }),
+  ).toHaveValue(/\d+/);
+  await expect(
+    page.getByRole("heading", { name: "Marketing site" }),
+  ).toBeVisible();
+  const secondKey = await page
+    .getByLabel("Publishable integration key")
+    .inputValue();
+
+  await page
+    .getByRole("combobox", { name: "Switch workspace" })
+    .selectOption({ label: "Primary project" });
+  await expect(
+    page.getByRole("heading", { name: "Primary project" }),
+  ).toBeVisible();
+  const firstKey = await page
+    .getByLabel("Publishable integration key")
+    .inputValue();
+  expect(firstKey).not.toEqual(secondKey);
+
+  await page
+    .getByRole("combobox", { name: "Switch workspace" })
+    .selectOption({ label: "Marketing site" });
+  await expect(
+    page.getByRole("heading", { name: "Marketing site" }),
+  ).toBeVisible();
+  await expect(page.getByLabel("Publishable integration key")).toHaveValue(
+    secondKey,
+  );
 });
 
 test("ingest an unhandled exception and find it by installation ID", async ({
@@ -103,9 +247,7 @@ test("ingest an unhandled exception and find it by installation ID", async ({
   await page
     .getByLabel("Email address")
     .fill(`crash-${randomUUID()}@test.example`);
-  await page
-    .getByLabel("Password", { exact: true })
-    .fill("browser-test-password-123");
+  await page.getByLabel("Password", { exact: true }).fill(testPassword());
   await page
     .getByRole("button", { name: "Create workspace", exact: true })
     .click();
@@ -127,10 +269,14 @@ test("ingest an unhandled exception and find it by installation ID", async ({
           exception: {
             type: "TypeError",
             message: "Extension startup failed",
-            stack: "TypeError: Extension startup failed\\n at service-worker.js:17",
+            stack:
+              "TypeError: Extension startup failed\\n at service-worker.js:17",
           },
         }),
-      }).then(async (result) => ({ status: result.status, body: await result.json() })),
+      }).then(async (result) => ({
+        status: result.status,
+        body: await result.json(),
+      })),
     { key: publishableKey, id: allocationID },
   );
   expect(response.status).toBe(200);
@@ -147,7 +293,7 @@ test("ingest an unhandled exception and find it by installation ID", async ({
   );
 });
 
-test("register, create, start, integrate, and pause an experiment", async ({
+test("register, create, run, pause, and delete an experiment", async ({
   page,
 }) => {
   const errors: string[] = [];
@@ -160,9 +306,7 @@ test("register, create, start, integrate, and pause an experiment", async ({
   await page
     .getByLabel("Email address")
     .fill(`browser-${randomUUID()}@test.example`);
-  await page
-    .getByLabel("Password", { exact: true })
-    .fill("browser-test-password-123");
+  await page.getByLabel("Password", { exact: true }).fill(testPassword());
   await page
     .getByRole("button", { name: "Create workspace", exact: true })
     .click();
@@ -213,6 +357,17 @@ test("register, create, start, integrate, and pause an experiment", async ({
   await expect(
     page.getByRole("button", { name: "Resume experiment" }),
   ).toBeVisible();
+  await page.getByRole("button", { name: "Delete permanently" }).click();
+  await page.getByLabel("Experiment key").fill("a_simpler_checkout");
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Delete permanently" })
+    .click();
+  await expect(page).toHaveURL(/\/app$/);
+  await page.getByRole("link", { name: /Experiments/ }).click();
+  await expect(
+    page.getByText("A simpler checkout", { exact: true }),
+  ).toHaveCount(0);
   await page.setViewportSize({ width: 390, height: 844 });
   expect(
     await page.evaluate(() => document.documentElement.scrollWidth),

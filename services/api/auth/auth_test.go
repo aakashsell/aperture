@@ -3,11 +3,12 @@ package auth
 import (
 	"aperture/api/config"
 	"github.com/golang-jwt/jwt/v5"
+	"strings"
 	"testing"
 )
 
 func TestTokenContract(t *testing.T) {
-	t.Setenv("JWT_SECRET", "test-secret-with-at-least-32-characters")
+	t.Setenv("JWT_SECRET", strings.Repeat("x", 32))
 	Init(&config.Config{})
 	token, err := GenerateToken(123)
 	if err != nil {

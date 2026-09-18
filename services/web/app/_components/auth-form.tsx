@@ -1,6 +1,6 @@
 "use client";
 
-import { request } from "@/lib/api";
+import { request, setActiveProject } from "@/lib/api";
 import { ArrowRight, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
@@ -64,6 +64,8 @@ export function Auth({
               setError("");
               const data = Object.fromEntries(new FormData(e.currentTarget));
               try {
+                // A previous account's selected project must never leak into a new session.
+                setActiveProject(null);
                 await request(`/auth/${register ? "register" : "login"}`, data);
                 onSuccess();
               } catch (e) {

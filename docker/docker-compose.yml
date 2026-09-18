@@ -5,7 +5,7 @@ services:
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: aperture
-      POSTGRES_PASSWORD: aperture
+      POSTGRES_PASSWORD: ${APERTURE_DEV_DB_PASSWORD:?Run make dev to generate local-only credentials}
       POSTGRES_DB: aperture
     ports:
       - "5432:5432"
@@ -20,7 +20,7 @@ services:
   migrate:
     image: postgres:16-alpine
     environment:
-      DATABASE_URL: postgresql://aperture:aperture@db:5432/aperture
+      DATABASE_URL: postgresql://aperture:${APERTURE_DEV_DB_PASSWORD}@db:5432/aperture
     volumes:
       - ../db/migrations:/migrations
       - ../db/seeds:/seeds
@@ -37,9 +37,9 @@ services:
     ports:
       - "8000:8000"
     environment:
-      DATABASE_URL: postgresql://aperture:aperture@db:5432/aperture
+      DATABASE_URL: postgresql://aperture:${APERTURE_DEV_DB_PASSWORD}@db:5432/aperture
       PORT: 8000
-      JWT_SECRET: ${JWT_SECRET:-local-development-only-secret-32-characters}
+      JWT_SECRET: ${APERTURE_DEV_JWT_SECRET:?Run make dev to generate local-only credentials}
       APP_ENV: development
     depends_on:
       db:
@@ -55,7 +55,7 @@ services:
   worker:
     build: ../worker
     environment:
-      DATABASE_URL: postgresql://aperture:aperture@db:5432/aperture
+      DATABASE_URL: postgresql://aperture:${APERTURE_DEV_DB_PASSWORD}@db:5432/aperture
       WORKER_INTERVAL_SECONDS: 30
     depends_on:
       migrate:

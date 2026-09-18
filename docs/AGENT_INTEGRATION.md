@@ -15,15 +15,15 @@ Use only documented APIs. Do not implement a separate assignment hash or infer e
 9. Treat “No health flags observed” as an operational signal, not proof of safety. A human reviews exposure counts and failure rates before expanding to 25%, 50%, or 100%.
 
 ```ts
-const enabled = await aperture.gate('new-sync');
-await aperture.exposeGate('new-sync', enabled);
+const enabled = await aperture.gate("new-sync");
+await aperture.exposeGate("new-sync", enabled);
 try {
   enabled ? runNewSync() : runCurrentSync();
 } catch (error) {
-  await aperture.reportGateHealth('new-sync', {
+  await aperture.reportGateHealth("new-sync", {
     eventId: crypto.randomUUID(),
-    name: 'sync-failed',
-    severity: 'error',
+    name: "sync-failed",
+    severity: "error",
   });
   throw error;
 }
@@ -58,14 +58,29 @@ Use `reportCrash()` for service worker startup errors, unhandled rejections, or 
 
 ```ts
 self.onunhandledrejection = (event) => {
-  const error = event.reason instanceof Error ? event.reason : new Error(String(event.reason));
-  void aperture.reportCrash({
-    eventId: crypto.randomUUID(),
-    name: 'unhandled-rejection',
-    severity: 'fatal',
-    exception: { type: error.name, message: error.message, stack: error.stack },
-  }).catch(() => {});
+  const error =
+    event.reason instanceof Error
+      ? event.reason
+      : new Error(String(event.reason));
+  void aperture
+    .reportCrash({
+      eventId: crypto.randomUUID(),
+      name: "unhandled-rejection",
+      severity: "fatal",
+      exception: {
+        type: error.name,
+        message: error.message,
+        stack: error.stack,
+      },
+    })
+    .catch(() => {});
 };
 ```
 
 The SDK suppresses an identical exception from the same allocation for five minutes in memory. The server also deduplicates matching reports by installation and five-minute time bucket while increasing an occurrence count. A browser or extension service worker restart clears the SDK's in-memory cache; server grouping still applies. The Event stream supports an installation lookup only through the authenticated dashboard session. Stack traces and exception messages may contain sensitive values, so keep them bounded and scrub secrets before reporting.
+
+For a shorter wrapper, `captureException(error, context)` normalizes both `Error` and non-`Error` values and forwards them through the same crash ingestion path. Do not install automatic global handlers unless the application owner wants them; attach handlers at the app boundary and keep reporting best-effort.
+
+For support tickets, ask the user to copy the allocation ID shown by the app, then use the rollout's **Override one installation** or the Event stream filter. A support override changes only that gate/allocation pair, is recorded in the audit trail, and remains until removed. Use **What would this ID get?** to inspect the current evaluator result. Avoid asking users to send secrets or unrelated personal data.
+
+When running an experiment after the rollout, record exposure only after rendering the selected experience, then call `track()` when the real conversion happens. Assignments, exposures, and conversion events are separate steps; only actual exposed users contribute to the experiment metric.

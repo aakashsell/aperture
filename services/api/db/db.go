@@ -16,7 +16,7 @@ var Pool *pgxpool.Pool
 func Init() error {
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
-		dsn = "postgresql://aperture:aperture@db:5432/aperture"
+		return fmt.Errorf("DATABASE_URL must be set")
 	}
 
 	config, err := pgxpool.ParseConfig(dsn)

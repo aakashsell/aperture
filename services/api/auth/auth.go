@@ -118,10 +118,16 @@ func Middleware() fiber.Handler {
 		}
 
 		var projectID int
-		err = db.Pool.QueryRow(c.Context(),
-			"SELECT id FROM projects WHERE owner_id = $1 LIMIT 1", userID).Scan(&projectID)
+		selectedProject := strings.TrimSpace(c.Get("X-Aperture-Project"))
+		if selectedProject != "" {
+			err = db.Pool.QueryRow(c.Context(),
+				"SELECT id FROM projects WHERE id::text = $1 AND owner_id = $2", selectedProject, userID).Scan(&projectID)
+		} else {
+			err = db.Pool.QueryRow(c.Context(),
+				"SELECT id FROM projects WHERE owner_id = $1 ORDER BY id LIMIT 1", userID).Scan(&projectID)
+		}
 		if err != nil {
-			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "no project found"})
+			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "Workspace not found or you do not have access to it"})
 		}
 
 		c.Locals("user_id", userID)

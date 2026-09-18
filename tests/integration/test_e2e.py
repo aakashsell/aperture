@@ -20,12 +20,12 @@ class PipelineTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.session=requests.Session()
-        r=cls.session.post(API+'/auth/register',json={'email':f'{uuid.uuid4().hex}@test.example','password':'a-long-test-password','project':'Integration tests'},timeout=10)
+        r=cls.session.post(API+'/auth/register',json={'email':f'{uuid.uuid4().hex}@test.example','password':f'test-{uuid.uuid4().hex}-{uuid.uuid4().hex}','project':'Integration tests'},timeout=10)
         assert r.status_code==200,r.text
         cls.key=cls.session.get(API+'/auth/session',timeout=10).json()['publishable_key']
         cls.sdk=requests.Session();cls.sdk.headers['X-API-Key']=cls.key
         cls.other=requests.Session()
-        r=cls.other.post(API+'/auth/register',json={'email':f'{uuid.uuid4().hex}@test.example','password':'another-test-password'},timeout=10)
+        r=cls.other.post(API+'/auth/register',json={'email':f'{uuid.uuid4().hex}@test.example','password':f'test-{uuid.uuid4().hex}-{uuid.uuid4().hex}'},timeout=10)
         assert r.status_code==200,r.text
         cls.other_key=cls.other.get(API+'/auth/session',timeout=10).json()['publishable_key']
 
@@ -162,6 +162,68 @@ class PipelineTests(unittest.TestCase):
         self.assertIsNone(report['gate_key'])
         self.assertNotIn(allocation['id'],report['allocation_id_hash'])
         self.assertEqual(self.other.post(API+'/crashes/query',json={'allocation_id':allocation['id'],'allocation_kind':'installation'},timeout=10).json(),[])
+
+    def test_channel_beta_allowlist_fill_versions_and_project_scope(self):
+        channel_key='beta_'+uuid.uuid4().hex[:10]
+        channel=self.session.post(API+'/channels',json={
+            'key':channel_key,
+            'name':'Beta testers',
+            'allocation_kind':'installation',
+            'fill_percentage':0,
+            'allocation_ids':['beta-install-1',' beta-install-1 '],
+        },timeout=10)
+        self.assertEqual(channel.status_code,200,channel.text)
+        self.assertEqual(channel.json()['members'],1)
+        self.assertEqual(channel.json()['config_version'],1)
+
+        gate_key='beta_gate_'+uuid.uuid4().hex[:10]
+        created=self.session.post(API+'/gates',json={
+            'key':gate_key,
+            'name':'Beta feature',
+            'allocation_kind':'installation',
+            'rollout_percentage':100,
+            'channel_key':channel_key,
+        },timeout=10)
+        self.assertEqual(created.status_code,200,created.text)
+        sdk=requests.Session();sdk.headers['X-API-Key']=self.key
+        path=f'/gates/{gate_key}'
+        beta={'kind':'installation','id':'beta-install-1'}
+        outsider={'kind':'installation','id':'other-install'}
+        self.assertFalse(sdk.post(API+path+'/evaluate',json={'allocation':beta},timeout=10).json()['enabled'])
+
+        started=self.session.post(API+path+'/rollout',json={'rollout_percentage':100,'expected_version':1},timeout=10)
+        self.assertEqual(started.status_code,200,started.text)
+        beta_decision=sdk.post(API+path+'/evaluate',json={'allocation':beta},timeout=10).json()
+        outside_decision=sdk.post(API+path+'/evaluate',json={'allocation':outsider},timeout=10).json()
+        self.assertTrue(beta_decision['enabled'])
+        self.assertEqual(beta_decision['reason'],'channel_allowlist')
+        self.assertFalse(outside_decision['enabled'])
+        self.assertEqual(outside_decision['reason'],'channel_not_eligible')
+
+        expanded=self.session.post(API+f'/channels/{channel_key}/fill',json={'fill_percentage':100,'expected_version':1},timeout=10)
+        self.assertEqual(expanded.status_code,200,expanded.text)
+        self.assertTrue(sdk.post(API+path+'/evaluate',json={'allocation':outsider},timeout=10).json()['enabled'])
+        stale=self.session.post(API+f'/channels/{channel_key}/fill',json={'fill_percentage':0,'expected_version':1},timeout=10)
+        self.assertEqual(stale.status_code,409)
+        narrowed=self.session.post(API+f'/channels/{channel_key}/fill',json={'fill_percentage':0,'expected_version':2},timeout=10)
+        self.assertEqual(narrowed.status_code,200,narrowed.text)
+        self.assertFalse(sdk.post(API+path+'/evaluate',json={'allocation':outsider},timeout=10).json()['enabled'])
+
+        replaced=self.session.post(API+f'/channels/{channel_key}/members',json={'allocation_ids':['beta-install-2'],'expected_version':3},timeout=10)
+        self.assertEqual(replaced.status_code,200,replaced.text)
+        self.assertFalse(sdk.post(API+path+'/evaluate',json={'allocation':beta},timeout=10).json()['enabled'])
+        beta_two=sdk.post(API+path+'/evaluate',json={'allocation':{'kind':'installation','id':'beta-install-2'}},timeout=10).json()
+        self.assertTrue(beta_two['enabled'])
+        self.assertEqual(beta_two['reason'],'channel_allowlist')
+        self.assertEqual(self.other.get(API+'/channels',timeout=10).json(),[])
+        other_project_gate=self.other.post(API+'/gates',json={
+            'key':'cross_channel_'+uuid.uuid4().hex[:8],
+            'name':'Must not attach foreign channel',
+            'allocation_kind':'installation',
+            'rollout_percentage':100,
+            'channel_key':channel_key,
+        },timeout=10)
+        self.assertEqual(other_project_gate.status_code,400)
 
     def test_project_scoped_pipeline(self):
         key=self.create();path=f'/experiments/{key}';self.post(path+'/start')

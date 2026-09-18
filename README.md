@@ -48,12 +48,12 @@ The core product—the rollout and experiment engines, TypeScript SDK, dashboard
 
 Our intended offerings include:
 
-| Option | What you manage | Status |
-|---|---|---|
-| Self-host the open-source core | Aperture and your Postgres database | Available in alpha |
-| Full hosting | Your application; we would host Aperture and its experiment database | Planned |
-| Hosted Aperture with your database | Your Postgres; we would operate the Aperture service | Planned |
-| Custom solutions | Integrations, deployments, and other company-specific work scoped together | Individually scoped |
+| Option                             | What you manage                                                            | Status              |
+| ---------------------------------- | -------------------------------------------------------------------------- | ------------------- |
+| Self-host the open-source core     | Aperture and your Postgres database                                        | Available in alpha  |
+| Full hosting                       | Your application; we would host Aperture and its experiment database       | Planned             |
+| Hosted Aperture with your database | Your Postgres; we would operate the Aperture service                       | Planned             |
+| Custom solutions                   | Integrations, deployments, and other company-specific work scoped together | Individually scoped |
 
 Hosted offerings are planned. Availability, pricing, and engagement terms will be announced separately; these options do not change the core’s MIT license.
 
@@ -71,10 +71,10 @@ Requires Docker with Compose. Open http://localhost:3000 for the landing page, `
 
 The landing page and product app are separate Compose deployments from this repository, so they can be released and scaled independently while sharing the same codebase:
 
-| Dokploy deployment | Compose file | Services |
-|---|---|---|
-| `aperture-core` | `docker-compose.production.yml` | App UI, API, Postgres, migrations, and worker |
-| `aperture-site` | `docker-compose.site.yml` | Static landing page with the interactive Next.js demo behind it |
+| Dokploy deployment | Compose file                    | Services                                                        |
+| ------------------ | ------------------------------- | --------------------------------------------------------------- |
+| `aperture-core`    | `docker-compose.production.yml` | App UI, API, Postgres, migrations, and worker                   |
+| `aperture-site`    | `docker-compose.site.yml`       | Static landing page with the interactive Next.js demo behind it |
 
 Create both Compose deployments in the same Dokploy project and connect them to the `main` branch of this GitHub repository. Traefik labels route `aperture-app.bazement.net` to the app UI and `aperture.bazement.net` to the landing service, each on port `3000`. Set `POSTGRES_PASSWORD` and a random 32-byte-or-longer `JWT_SECRET` as secrets on the core deployment. Set `APP_URL=https://aperture-app.bazement.net` on the site deployment. Keep the database and API private; only the app UI and landing service are public. A persistent `aperture-data` volume stores Postgres data.
 
@@ -101,23 +101,23 @@ Create a rollout in `/app`; it starts off with a 5% target. Copy your publishabl
 Add `"storage"` to your extension permissions and the Aperture API origin to `host_permissions`. When no allocation unit is passed, the SDK generates an anonymous ID once and persists it in `chrome.storage.local`, so each installation receives a stable decision without requiring your own identity system.
 
 ```ts
-import { Aperture } from '@aperture/sdk';
+import { Aperture } from "@aperture/sdk";
 
 const aperture = new Aperture({
-  apiUrl: 'https://your-aperture-api.example',
-  publishableKey: 'ap_pub_YOUR_PROJECT_KEY',
+  apiUrl: "https://your-aperture-api.example",
+  publishableKey: "ap_pub_YOUR_PROJECT_KEY",
 });
 
-const enabled = await aperture.gate('new-sync');
-await aperture.exposeGate('new-sync', enabled);
+const enabled = await aperture.gate("new-sync");
+await aperture.exposeGate("new-sync", enabled);
 
 try {
   enabled ? runNewSync() : runCurrentSync();
 } catch (error) {
-  await aperture.reportGateHealth('new-sync', {
+  await aperture.reportGateHealth("new-sync", {
     eventId: crypto.randomUUID(),
-    name: 'sync-failed',
-    severity: 'error',
+    name: "sync-failed",
+    severity: "error",
   });
   throw error;
 }
@@ -129,20 +129,54 @@ Unhandled exceptions can be reported without choosing a gate. `reportCrash()` ac
 
 ```ts
 self.onerror = (_message, _source, _line, _column, error) => {
-  void aperture.reportCrash({
-    eventId: crypto.randomUUID(),
-    name: 'uncaught',
-    severity: 'fatal',
-    exception: {
-      type: error?.name ?? 'Error',
-      message: error?.message ?? String(error),
-      stack: error?.stack,
-    },
-  }).catch(() => {}); // Keep global error handlers best-effort.
+  void aperture
+    .reportCrash({
+      eventId: crypto.randomUUID(),
+      name: "uncaught",
+      severity: "fatal",
+      exception: {
+        type: error?.name ?? "Error",
+        message: error?.message ?? String(error),
+        stack: error?.stack,
+      },
+    })
+    .catch(() => {}); // Keep global error handlers best-effort.
 };
 ```
 
 Stack traces are capped at 32 KiB and messages at 4 KiB. Treat exception text and properties as potentially sensitive; avoid attaching tokens or user content.
+
+The SDK also offers `captureException(error, context)` as a convenience adapter for `Error` objects and non-`Error` rejection values. It uses the same crash endpoint, limits, and deduplication as `reportCrash()`; it does not install global handlers or persist a local crash log for you.
+
+```ts
+await aperture.captureException(error, {
+  severity: "fatal",
+  properties: { source: "service-worker" },
+});
+```
+
+### Channels and support overrides
+
+Create channels such as `dev`, `beta`, or `canary` in **Settings → Channels**. A channel has one allocation kind, optional allowlisted IDs, and deterministic random fill. Allowlisted IDs are stored as keyed hashes. Attach the channel when creating a rollout; channel membership determines eligibility, then the gate's rollout percentage applies within that eligible audience. Changing a channel updates attached gate versions.
+
+On a rollout detail page, **Override one installation** can force one ID on or off for support debugging, or remove the override. Overrides require a signed-in dashboard, are audited, apply to running rollouts, and persist until removed. Existing SDK cache entries may remain in effect for up to 30 seconds; call `gate(key, allocation, { refresh: true })` when the client needs to bypass its local cache immediately.
+
+**What would this ID get?** uses the same evaluator as live gate requests and explains the decision without recording an evaluation. It is dashboard-only. The SDK evaluation response includes a reason such as `support_override`, `channel_allowlist`, `channel_percentage`, `channel_not_eligible`, `percentage_bucket`, or `gate_off`.
+
+The authenticated Event stream can query global crashes and gate health signals by allocation ID. Aperture stores keyed hashes rather than raw IDs; only an operator who already has the ID can look up that installation's records.
+
+Offline decisions are disabled by default. To opt in to a bounded stale decision after transient network/server failures, configure `offlineDecisionTtlMs` (0–24 hours) and handle `onStaleDecision`. This can preserve an enabled feature during an outage, but it can also keep a broken feature enabled; choose the policy for your application.
+
+```ts
+const aperture = new Aperture({
+  apiUrl,
+  publishableKey,
+  offlineDecisionTtlMs: 60 * 60 * 1000,
+  onStaleDecision: (key, enabled, ageMs) => {
+    console.warn("Using a stale Aperture decision", { key, enabled, ageMs });
+  },
+});
+```
 
 Server, account, or signed-in clients can pass an explicit allocation unit such as `{ kind: 'installation', id: installationID }`. Browser and extension calls may omit it to use Aperture's persistent anonymous allocation.
 
@@ -151,26 +185,26 @@ Server, account, or signed-in clients can pass an explicit allocation unit such 
 Create an experiment in `/app`, choose its primary metric, then start it.
 
 ```ts
-import { Aperture } from '@aperture/sdk';
+import { Aperture } from "@aperture/sdk";
 
 const ap = new Aperture({
-  apiUrl: 'http://localhost:8000',
-  publishableKey: 'ap_pub_YOUR_PROJECT_KEY',
+  apiUrl: "http://localhost:8000",
+  publishableKey: "ap_pub_YOUR_PROJECT_KEY",
   onError: console.error,
 });
 
 let variant: string | null = null;
 try {
-  variant = await ap.getVariant('checkout', user.id);
+  variant = await ap.getVariant("checkout", user.id);
 } catch {
   // Choose your application's safe fallback. Do not record a fallback as an exposure.
 }
-renderCheckout(variant ?? 'control');
-if (variant) await ap.expose('checkout', user.id, variant);
+renderCheckout(variant ?? "control");
+if (variant) await ap.expose("checkout", user.id, variant);
 
 // Only emit purchase when it actually happens. A zero-valued purchase still counts
 // as a conversion for binary metrics because binary metrics measure event presence.
-await ap.track(crypto.randomUUID(), user.id, 'purchase', 49.99);
+await ap.track(crypto.randomUUID(), user.id, "purchase", 49.99);
 ```
 
 Await exposure before dependent events. Preserve event IDs when retrying; events are deduplicated per project. Requests reject on HTTP/network errors and time out after 5 seconds by default. `getVariant()` is asynchronous and always checks the server; the SDK remembers the last returned variant only to support exposure validation.
@@ -178,6 +212,8 @@ Await exposure before dependent events. Preserve event IDs when retrying; events
 After rollout, assignments return the selected feature variant for everyone. Stop calling `expose()` for completed experiments: rollout decisions are not new experimental exposures.
 
 See [agent integration instructions](docs/AGENT_INTEGRATION.md) for a repeatable integration checklist.
+
+For exact SDK instrumentation steps—including gate health, global crashes, experiment exposure and conversion events—see the [telemetry guide](docs/TELEMETRY_GUIDE.md). For workspace creation, switching, and access boundaries, see the [workspaces guide](docs/WORKSPACES.md). For hiding or permanently removing resources, see the [rollout and experiment lifecycle guide](docs/RESOURCE_LIFECYCLE.md). The [integration feedback roadmap](docs/INTEGRATION_FEEDBACK_ROADMAP.md) tracks the feature status and architecture.
 
 ## Guarantees and lifecycle
 
@@ -203,27 +239,27 @@ Statistical references: [SciPy exact tests](https://docs.scipy.org/doc/scipy/ref
 
 ## Architecture
 
-| Component | Responsibility |
-|---|---|
-| Go API | Authentication, project isolation, immutable assignment, validated ingestion, lifecycle |
-| Postgres | Source of truth, transactions, event deduplication, worker coordination |
-| Python worker | Set-based aggregation, uncertainty estimates, SRM, heartbeat |
-| Next.js | Landing `/`, simulation `/demo`, workspace `/app`, same-origin API proxy |
+| Component      | Responsibility                                                                                                                      |
+| -------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| Go API         | Authentication, project isolation, immutable assignment, validated ingestion, lifecycle                                             |
+| Postgres       | Source of truth, transactions, event deduplication, worker coordination                                                             |
+| Python worker  | Set-based aggregation, uncertainty estimates, SRM, heartbeat                                                                        |
+| Next.js        | Landing `/`, simulation `/demo`, workspace `/app`, same-origin API proxy                                                            |
 | TypeScript SDK | Server-authoritative rollout and experiment decisions, stable Chrome/browser identity, and explicit exposure/health/event reporting |
 
 The worker runs every 30 seconds, uses a Postgres advisory lock to prevent overlapping workers, and closes connections even on failures. Event Stream shows its last completed cycle. Aggregation batches in SQL and skips settled cohorts; bootstrap computation still scales with exposed users and should be load-tested for your workload.
 
 ## Configuration
 
-| Variable | Used by | Purpose |
-|---|---|---|
-| `DATABASE_URL` | API, worker, migrations | Postgres connection |
-| `JWT_SECRET` | API | Required signing secret, minimum 32 characters |
-| `APP_ENV` | API | Set `production` for Secure session cookies |
-| `PORT` | API | Defaults to 8000 |
-| `API_URL` | Next.js | Internal proxy target, defaults to http://localhost:8000; Compose uses http://api:8000 |
-| `WORKER_INTERVAL_SECONDS` | Worker | Defaults to 30 |
-| `MIGRATIONS_DIR` | Migration runner | Defaults to /migrations |
+| Variable                  | Used by                 | Purpose                                                                                |
+| ------------------------- | ----------------------- | -------------------------------------------------------------------------------------- |
+| `DATABASE_URL`            | API, worker, migrations | Postgres connection                                                                    |
+| `JWT_SECRET`              | API                     | Required signing secret, minimum 32 characters                                         |
+| `APP_ENV`                 | API                     | Set `production` for Secure session cookies                                            |
+| `PORT`                    | API                     | Defaults to 8000                                                                       |
+| `API_URL`                 | Next.js                 | Internal proxy target, defaults to http://localhost:8000; Compose uses http://api:8000 |
+| `WORKER_INTERVAL_SECONDS` | Worker                  | Defaults to 30                                                                         |
+| `MIGRATIONS_DIR`          | Migration runner        | Defaults to /migrations                                                                |
 
 Compose is a development configuration with a development-only signing secret and exposed database port. Production deployment requires your own strong secret, TLS, Secure cookies, restricted database access, and operational configuration. No production deployment is included here.
 

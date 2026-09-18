@@ -31,6 +31,9 @@ func GetVariant(ctx context.Context, experimentID int, experimentKey string, use
 	if err != nil {
 		return nil, err
 	}
+	if status == "archived" {
+		return nil, nil
+	}
 	rows, err := tx.Query(ctx, `SELECT id,experiment_id,key,name,allocation,is_control FROM variants WHERE experiment_id=$1 ORDER BY id`, experimentID)
 	if err != nil {
 		return nil, err

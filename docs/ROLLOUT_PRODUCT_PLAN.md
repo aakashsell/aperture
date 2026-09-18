@@ -20,6 +20,10 @@ The v0 foundation, SDK, dashboard, landing page, and documentation in milestones
 
 The remaining dogfood step is to apply the documented integration to the real Chrome extension feature and run it against a deployed Aperture environment. The extension source and public deployment are outside this repository, so no live-user rollout or compatibility claim is recorded yet. Promotion from a rollout into an experiment, hosted alpha operations, and external compatibility benchmarks remain later milestones.
 
+The integration feedback features are now implemented in the working tree: audited per-allocation overrides, channel-scoped rollout eligibility, dashboard evaluation explanations, complete allocation health lookup, opt-in stale offline decisions, and `captureException()`. Migrations 006–007 and the browser flow still need database-backed integration verification before these are treated as production-proven.
+
+The exact status and release gates are tracked in [the integration feedback roadmap and architecture](INTEGRATION_FEEDBACK_ROADMAP.md).
+
 ## Product contract
 
 ### Gates and rollouts
@@ -27,7 +31,7 @@ The remaining dogfood step is to apply the documented integration to the real Ch
 A gate answers whether a stable allocation unit receives a feature.
 
 ```ts
-const enabled = await aperture.gate("new-sync")
+const enabled = await aperture.gate("new-sync");
 ```
 
 - A gate starts off and can be set from 0% to 100%.
@@ -45,8 +49,11 @@ Browser clients may omit an allocation ID. The SDK creates a random installation
 Advanced clients can provide a stable allocation unit explicitly:
 
 ```ts
-await aperture.gate("new-sync", { id: user.id, kind: "user" })
-await aperture.gate("team-billing", { id: organization.id, kind: "organization" })
+await aperture.gate("new-sync", { id: user.id, kind: "user" });
+await aperture.gate("team-billing", {
+  id: organization.id,
+  kind: "organization",
+});
 ```
 
 - Supported kinds begin as `anonymous`, `user`, `installation`, `device`, `account`, `organization`, and `host`.
@@ -106,6 +113,8 @@ Decision rows provide diagnostics and an audit trail. The decision itself remain
 - project-scoped event deduplication;
 - first supported health events: `error`, `crash`, and a custom failure event.
 
+`gate_overrides` stores per-allocation support decisions using the same keyed allocation hash, with `gate_override_changes` as the operator audit trail. Channels and their hashed members live in `channels`, `channel_members`, and append-only change tables. Gates may reference one channel; changing its membership or fill increments the versions of attached gates so SDK cache entries expire against the new configuration.
+
 Store a keyed hash of allocation IDs in gate telemetry rather than raw IDs. The API can evaluate using the submitted ID, then discard the raw value after hashing. The project secret used for hashing must be separate from the public SDK key.
 
 ### API surface
@@ -124,6 +133,9 @@ Management routes, authenticated with a dashboard session:
 - `POST /gates/:key/rollout`
 - `POST /gates/:key/disable`
 - `POST /gates/:key/archive`
+- `POST /gates/:key/overrides/inspect`, `POST /gates/:key/overrides`, `POST /gates/:key/overrides/remove`
+- `POST /debug/allocation/evaluate`
+- `GET /channels`, `POST /channels`, `POST /channels/:key/fill`, `POST /channels/:key/members`
 
 Every management mutation validates the expected current configuration version to prevent two tabs or agents from overwriting each other.
 
@@ -133,19 +145,19 @@ Every management mutation validates the expected current configuration version t
 const aperture = new Aperture({
   apiUrl,
   publishableKey,
-})
+});
 
-const enabled = await aperture.gate("new-sync")
+const enabled = await aperture.gate("new-sync");
 if (enabled) {
-  await aperture.exposeGate("new-sync", true)
-  runNewSync()
+  await aperture.exposeGate("new-sync", true);
+  runNewSync();
 }
 
 await aperture.reportGateHealth("new-sync", {
   eventId: crypto.randomUUID(),
   name: "error",
   severity: "error",
-})
+});
 ```
 
 The SDK must:

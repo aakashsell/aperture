@@ -5,7 +5,7 @@ services:
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: aperture
-      POSTGRES_PASSWORD: aperture
+      POSTGRES_PASSWORD: ${APERTURE_TEST_DB_PASSWORD:?Use make test-integration to create a temporary test credential}
       POSTGRES_DB: aperture
     volumes:
       - pgdata_test:/var/lib/postgresql/data
@@ -18,7 +18,7 @@ services:
   migrate:
     image: postgres:16-alpine
     environment:
-      DATABASE_URL: postgresql://aperture:aperture@db:5432/aperture
+      DATABASE_URL: postgresql://aperture:${APERTURE_TEST_DB_PASSWORD}@db:5432/aperture
     volumes:
       - ../db/migrations:/migrations
       - ../db/seeds:/seeds
@@ -32,9 +32,9 @@ services:
   api:
     build: ../services/api
     environment:
-      DATABASE_URL: postgresql://aperture:aperture@db:5432/aperture
+      DATABASE_URL: postgresql://aperture:${APERTURE_TEST_DB_PASSWORD}@db:5432/aperture
       PORT: 8000
-      JWT_SECRET: ${JWT_SECRET:-local-development-only-secret-32-characters}
+      JWT_SECRET: ${APERTURE_TEST_JWT_SECRET:?Use make test-integration to create a temporary test credential}
       APP_ENV: development
     depends_on:
       db:
@@ -55,7 +55,7 @@ services:
     working_dir: /tests
     environment:
       API_URL: http://api:8000
-      DATABASE_URL: postgresql://aperture:aperture@db:5432/aperture
+      DATABASE_URL: postgresql://aperture:${APERTURE_TEST_DB_PASSWORD}@db:5432/aperture
     command: >
       sh -c "
         pip install requests psycopg2-binary numpy scipy -q &&

@@ -3,9 +3,17 @@
 import {
   GateDetail,
   GateSummary,
+  Channel,
   Session,
+  archiveGate,
+  deleteGate,
   createGate,
   disableGate,
+  explainAllocation,
+  fetchChannels,
+  inspectGateOverride,
+  removeGateOverride,
+  setGateOverride,
   updateGateRollout,
 } from "@/lib/api";
 import {
@@ -165,11 +173,16 @@ export function CreateRolloutDialog({
     description: "",
     rollout_percentage: 5,
     allocation_kind: "anonymous",
+    channel_key: "",
   });
+  const [channels, setChannels] = useState<Channel[]>([]);
   const [busy, setBusy] = useState(false),
     [error, setError] = useState("");
   useEffect(() => {
     document.querySelector<HTMLDialogElement>("#create-rollout")?.showModal();
+    void fetchChannels()
+      .then(setChannels)
+      .catch((e) => setError(message(e)));
   }, []);
   return (
     <dialog
@@ -243,9 +256,41 @@ export function CreateRolloutDialog({
             onChange={(e) => setForm({ ...form, description: e.target.value })}
           />
         </label>
+        {channels.length > 0 && (
+          <label>
+            Release channel
+            <select
+              value={form.channel_key}
+              onChange={(e) => {
+                const channel = channels.find(
+                  (item) => item.key === e.target.value,
+                );
+                setForm({
+                  ...form,
+                  channel_key: e.target.value,
+                  allocation_kind: channel?.allocation_kind ?? "anonymous",
+                });
+              }}
+            >
+              <option value="">All allocations</option>
+              {channels.map((channel) => (
+                <option key={channel.key} value={channel.key}>
+                  {channel.name} · {channel.allocation_kind}
+                </option>
+              ))}
+            </select>
+            <small>
+              The channel chooses who is eligible. This rollout chooses what
+              share of them gets the enabled decision. A channel alone does
+              not turn the feature on.
+            </small>
+          </label>
+        )}
         <label>
-          Initial audience
-          <strong>{form.rollout_percentage}% of installations</strong>
+          {form.channel_key ? "Share of eligible channel" : "Share of installations"}
+          <strong>
+            {form.rollout_percentage}% of {channels.find((channel) => channel.key === form.channel_key)?.name ?? "installations"}
+          </strong>
           <input
             type="range"
             min="1"
@@ -258,8 +303,14 @@ export function CreateRolloutDialog({
         </label>
         <input type="hidden" value={form.allocation_kind} readOnly />
         <div className="notice">
-          Aperture creates a persistent anonymous installation ID in{" "}
-          <code>chrome.storage.local</code>. No account system is required.
+          {form.channel_key ? (
+            `This rollout uses ${form.allocation_kind} IDs. To enable the feature for every beta tester in the channel, set this to 100% and start the rollout.`
+          ) : (
+            <>
+              Aperture creates a persistent anonymous installation ID in{" "}
+              <code>chrome.storage.local</code>. No account system is required.
+            </>
+          )}
         </div>
         <div className="dialog-actions">
           <button type="button" className="button secondary" onClick={close}>
@@ -283,7 +334,11 @@ export function RolloutDetailView({
   session: Session;
   reload: () => Promise<void> | void;
 }) {
-  const [pending, setPending] = useState<number | "off" | null>(null);
+  const [pending, setPending] = useState<number | "off" | "archive" | null>(
+    null,
+  );
+  const [deletePrompt, setDeletePrompt] = useState(false);
+  const [deleteKey, setDeleteKey] = useState("");
   const [busy, setBusy] = useState(false),
     [error, setError] = useState("");
   const enabledRate = gate.enabled_exposures
@@ -300,7 +355,11 @@ export function RolloutDetailView({
     setBusy(true);
     setError("");
     try {
-      if (pending === "off") await disableGate(gate.key, gate.config_version);
+      if (pending === "archive") {
+        await archiveGate(gate.key, gate.config_version);
+        window.location.assign("/app");
+      } else if (pending === "off")
+        await disableGate(gate.key, gate.config_version);
       else await updateGateRollout(gate.key, pending, gate.config_version);
       setPending(null);
       await reload();
@@ -316,14 +375,21 @@ export function RolloutDetailView({
       <div className="rollout-detail-heading">
         <div>
           <Link href="/app">← All rollouts</Link>
-          <span className="eyebrow">ROLLOUT</span>
+          <span className="eyebrow">
+            ROLLOUT
+            {gate.channel_key
+              ? ` · CHANNEL ${gate.channel_key.toUpperCase()}`
+              : ""}
+          </span>
           <h1>{gate.name}</h1>
           <p>{gate.description || `Controlled by ${gate.key}.`}</p>
         </div>
         <span className={`status-pill ${gate.status}`}>
           {gate.status === "running"
             ? `${gate.rollout_percentage}% live`
-            : "Off"}
+            : gate.status === "archived"
+              ? "Archived"
+              : "Off"}
         </span>
       </div>
       <ErrorNotice error={error} />
@@ -357,8 +423,10 @@ export function RolloutDetailView({
           <span className="eyebrow">RELEASE CONTROL</span>
           <h2>
             {gate.status === "running"
-              ? `${gate.rollout_percentage}% of installations enabled`
-              : "The new behavior is off"}
+              ? `${gate.rollout_percentage}% of ${gate.channel_key ? `${gate.channel_key} eligible allocations` : "installations"} enabled`
+              : gate.status === "archived"
+                ? "This rollout is archived"
+                : "The new behavior is off"}
           </h2>
           <div className="rollout-meter">
             <i
@@ -377,6 +445,7 @@ export function RolloutDetailView({
                     : ""
                 }
                 onClick={() => setPending(value)}
+                disabled={gate.status === "archived"}
               >
                 {value}%
               </button>
@@ -385,9 +454,26 @@ export function RolloutDetailView({
           <button
             className="button secondary danger-button"
             onClick={() => setPending("off")}
-            disabled={gate.status === "off"}
+            disabled={gate.status !== "running"}
           >
             <Power size={16} /> Turn off rollout
+          </button>
+          <button
+            className="button secondary"
+            disabled={gate.status === "archived"}
+            onClick={() => setPending("archive")}
+          >
+            Archive rollout
+          </button>
+          <button
+            className="button secondary danger-button"
+            disabled={busy || gate.status === "running"}
+            onClick={() => {
+              setDeleteKey("");
+              setDeletePrompt(true);
+            }}
+          >
+            Delete permanently
           </button>
           <small>
             Changing the percentage creates a new configuration version.
@@ -424,6 +510,7 @@ export function RolloutDetailView({
           </p>
         </section>
       </div>
+      <AllocationOverridePanel gate={gate} reload={reload} />
       <section className="panel rollout-history">
         <div>
           <span className="eyebrow">AUDIT TRAIL</span>
@@ -482,16 +569,20 @@ export function RolloutDetailView({
             </button>
           </div>
           <h2>
-            {pending === "off"
-              ? "Turn the new behavior off?"
-              : `Release to ${pending}% of installations?`}
+            {pending === "archive"
+              ? "Archive this rollout?"
+              : pending === "off"
+                ? "Turn the new behavior off?"
+                : `Release to ${pending}% of installations?`}
           </h2>
           <p>
-            {pending === 100
-              ? "Every evaluated installation will receive the new behavior. Confirm that you reviewed the health evidence above."
-              : pending === "off"
-                ? "New evaluations will use the current behavior."
-                : "The audience will expand deterministically; installations already enabled stay enabled."}
+            {pending === "archive"
+              ? "This stops new evaluations, removes the rollout from the active list, and preserves its history and telemetry."
+              : pending === 100
+                ? "Every evaluated installation will receive the new behavior. Confirm that you reviewed the health evidence above."
+                : pending === "off"
+                  ? "New evaluations will use the current behavior."
+                  : "The audience will expand deterministically; installations already enabled stay enabled."}
           </p>
           <div className="dialog-actions">
             <button
@@ -506,6 +597,238 @@ export function RolloutDetailView({
           </div>
         </dialog>
       )}
+      {deletePrompt && (
+        <dialog open className="dialog confirm-dialog">
+          <div className="dialog-heading">
+            <span className="eyebrow">PERMANENT DELETE</span>
+            <button
+              aria-label="Cancel delete"
+              onClick={() => setDeletePrompt(false)}
+            >
+              <X size={18} />
+            </button>
+          </div>
+          <h2>Delete this rollout and its records?</h2>
+          <p>
+            This permanently removes its decisions, exposures, health signals,
+            overrides, and audit trail. A running rollout must be turned off or
+            archived first. Type <code>{gate.key}</code> to confirm.
+          </p>
+          <label>
+            Rollout key
+            <input
+              value={deleteKey}
+              onChange={(e) => setDeleteKey(e.target.value)}
+              autoComplete="off"
+            />
+          </label>
+          <div className="dialog-actions">
+            <button
+              className="button secondary"
+              onClick={() => setDeletePrompt(false)}
+            >
+              Cancel
+            </button>
+            <button
+              className="button danger-button"
+              disabled={busy || deleteKey !== gate.key}
+              onClick={async () => {
+                setBusy(true);
+                setError("");
+                try {
+                  await deleteGate(gate.key);
+                  window.location.assign("/app");
+                } catch (e) {
+                  setError(message(e));
+                  setBusy(false);
+                  setDeletePrompt(false);
+                }
+              }}
+            >
+              Delete permanently
+            </button>
+          </div>
+        </dialog>
+      )}
     </>
+  );
+}
+
+function AllocationOverridePanel({
+  gate,
+  reload,
+}: {
+  gate: GateDetail;
+  reload: () => Promise<void> | void;
+}) {
+  const [allocationID, setAllocationID] = useState("");
+  const [override, setOverride] = useState<boolean | null>(null);
+  const [inspected, setInspected] = useState(false);
+  const [decision, setDecision] = useState<{
+    enabled: boolean;
+    reason: string;
+  } | null>(null);
+  const [history, setHistory] = useState<
+    { action: string; config_version: number; changed_at: string }[]
+  >([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const allocation = { id: allocationID.trim(), kind: gate.allocation_kind };
+  const inspect = async () => {
+    setError("");
+    setInspected(false);
+    setDecision(null);
+    setBusy(true);
+    try {
+      const result = await inspectGateOverride(gate.key, allocation);
+      setOverride(result.override);
+      setHistory(result.history);
+      setInspected(true);
+    } catch (e) {
+      setError(message(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const explain = async () => {
+    setError("");
+    setBusy(true);
+    setDecision(null);
+    try {
+      const result = await explainAllocation(allocation, [gate.key]);
+      const item = result.decisions[0];
+      setDecision({ enabled: item.enabled, reason: item.reason });
+    } catch (e) {
+      setError(message(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const change = async (enabled: boolean | null) => {
+    setError("");
+    setBusy(true);
+    try {
+      if (enabled === null)
+        await removeGateOverride(gate.key, allocation, gate.config_version);
+      else
+        await setGateOverride(
+          gate.key,
+          allocation,
+          enabled,
+          gate.config_version,
+        );
+      setOverride(enabled);
+      setInspected(true);
+      await reload();
+      const latest = await inspectGateOverride(gate.key, allocation);
+      setHistory(latest.history);
+    } catch (e) {
+      setError(message(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <section className="panel allocation-override">
+      <div>
+        <span className="eyebrow">SUPPORT TOOL</span>
+        <h2>Override one installation</h2>
+        <p>
+          Force this allocation on or off while debugging a support issue.
+          Changes are audited and apply on its next evaluation.
+        </p>
+      </div>
+      <div className="override-controls">
+        <label htmlFor="allocation-override-id">
+          {gate.allocation_kind} ID
+        </label>
+        <input
+          id="allocation-override-id"
+          value={allocationID}
+          onChange={(e) => {
+            setAllocationID(e.target.value);
+            setInspected(false);
+            setOverride(null);
+            setHistory([]);
+            setDecision(null);
+          }}
+          placeholder="Paste the ID shared by the user"
+          autoComplete="off"
+        />
+        <button
+          className="button secondary"
+          disabled={busy || !allocation.id}
+          onClick={inspect}
+        >
+          {busy ? "Checking…" : "Check override"}
+        </button>
+        <button
+          className="button secondary"
+          disabled={busy || !allocation.id}
+          onClick={explain}
+        >
+          What would this ID get?
+        </button>
+      </div>
+      {inspected && (
+        <p className="override-state">
+          {override === null
+            ? "No support override is set."
+            : `This installation is forced ${override ? "on" : "off"}.`}
+        </p>
+      )}
+      {history.length > 0 && (
+        <div className="override-history">
+          <strong>Override audit</strong>
+          {history.map((item, index) => (
+            <small key={`${item.config_version}-${index}`}>
+              {item.action.replaceAll("_", " ")} · version {item.config_version}{" "}
+              · {ago(item.changed_at)}
+            </small>
+          ))}
+        </div>
+      )}
+      {decision && (
+        <p className="override-state">
+          Would receive{" "}
+          <strong>{decision.enabled ? "enabled" : "current"}</strong> ·{" "}
+          {decision.reason.replaceAll("_", " ")}
+        </p>
+      )}
+      {error && <ErrorNotice error={error} />}
+      <div className="override-actions">
+        <button
+          className="button secondary"
+          disabled={busy || !allocation.id || gate.status !== "running"}
+          onClick={() => change(true)}
+        >
+          Force on
+        </button>
+        <button
+          className="button secondary"
+          disabled={busy || !allocation.id || gate.status !== "running"}
+          onClick={() => change(false)}
+        >
+          Force off
+        </button>
+        <button
+          className="button secondary"
+          disabled={
+            busy ||
+            !allocation.id ||
+            override === null ||
+            gate.status !== "running"
+          }
+          onClick={() => change(null)}
+        >
+          Remove override
+        </button>
+      </div>
+      <small>
+        Only the keyed hash is stored. Overrides require a running rollout and
+        take effect on the next server evaluation; decisions may remain cached
+        for up to 30 seconds.
+      </small>
+    </section>
   );
 }

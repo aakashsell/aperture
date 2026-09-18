@@ -8,11 +8,14 @@ import {
   GateSummary,
   Result,
   Session,
+  WorkspaceChoice,
+  fetchWorkspaces,
   fetchExperiment,
   fetchExperiments,
   fetchGate,
   fetchGates,
   request,
+  setActiveProject,
 } from "@/lib/api";
 import {
   Activity,
@@ -30,7 +33,7 @@ import {
   Settings2,
 } from "lucide-react";
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Badge, ErrorNotice, Summary, ago, message, number } from "./shared";
 
@@ -51,6 +54,7 @@ export default function Workspace({
   gateKey?: string;
 }) {
   const [session, setSession] = useState<Session | null>(null),
+    [workspaces, setWorkspaces] = useState<WorkspaceChoice[]>([]),
     [ready, setReady] = useState(false),
     [error, setError] = useState("");
   const [experiments, setExperiments] = useState<Experiment[]>([]),
@@ -63,26 +67,33 @@ export default function Workspace({
     [creatingRollout, setCreatingRollout] = useState(false),
     [search, setSearch] = useState(""),
     [filter, setFilter] = useState("all");
+  const loadGeneration = useRef(0);
   const load = useCallback(async () => {
+    const generation = ++loadGeneration.current;
     setError("");
     try {
       const current = await request<Session>("/auth/session");
+      if (generation !== loadGeneration.current) return;
       setSession(current);
-      const [exps, rolloutList, diag] = await Promise.all([
+      const [available, exps, rolloutList, diag] = await Promise.all([
+        fetchWorkspaces(),
         fetchExperiments(),
         fetchGates(),
         request<Diagnostics>("/diagnostics"),
       ]);
+      if (generation !== loadGeneration.current) return;
+      setWorkspaces(available);
       setExperiments(exps);
       setGates(rolloutList);
       setDiagnostics(diag);
       if (experimentKey) setResult(await fetchExperiment(experimentKey));
       if (gateKey) setGate(await fetchGate(gateKey));
     } catch (e) {
+      if (generation !== loadGeneration.current) return;
       if (e instanceof APIError && e.status === 401) setSession(null);
       else setError(message(e));
     } finally {
-      setReady(true);
+      if (generation === loadGeneration.current) setReady(true);
     }
   }, [experimentKey, gateKey]);
   useEffect(() => {
@@ -117,10 +128,33 @@ export default function Workspace({
           <span className="workspace-avatar">
             {session.project_name[0].toUpperCase()}
           </span>
-          <div>
-            <strong>{session.project_name}</strong>
-            <small>Shipping workspace</small>
-          </div>
+          <label className="workspace-select-label">
+            <span className="sr-only">Switch workspace</span>
+            <select
+              aria-label="Switch workspace"
+              value={session.project_id}
+              onChange={(event) => {
+                const nextID = Number(event.target.value);
+                if (!nextID || nextID === session.project_id) return;
+                setActiveProject(nextID);
+                setExperiments([]);
+                setGates([]);
+                setGate(null);
+                setResult(null);
+                setDiagnostics(null);
+                void load();
+              }}
+            >
+              {workspaces.map((workspace) => (
+                <option key={workspace.id} value={workspace.id}>
+                  {workspace.name}
+                </option>
+              ))}
+            </select>
+            <small>
+              {workspaces.length} workspace{workspaces.length === 1 ? "" : "s"}
+            </small>
+          </label>
         </div>
         <div className="nav-label">WORKSPACE</div>
         <nav aria-label="Workspace">
@@ -168,6 +202,7 @@ export default function Workspace({
               onClick={async () => {
                 try {
                   await request("/auth/logout", {});
+                  setActiveProject(null);
                   setSession(null);
                 } catch (e) {
                   setError(message(e));
@@ -204,7 +239,13 @@ export default function Workspace({
           {view === "activity" ? (
             <EventStream diagnostics={diagnostics} refresh={load} />
           ) : view === "settings" ? (
-            <Settings session={session} />
+            <Settings
+              session={session}
+              onWorkspaceCreated={async (id) => {
+                setActiveProject(id);
+                await load();
+              }}
+            />
           ) : gateKey ? (
             gate ? (
               <RolloutDetailView gate={gate} session={session} reload={load} />

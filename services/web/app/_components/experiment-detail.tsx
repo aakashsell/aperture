@@ -4,6 +4,8 @@ import {
   Metric,
   Result,
   Session,
+  archiveExperiment,
+  deleteExperiment,
   fetchMetrics,
   linkMetric,
   request,
@@ -44,7 +46,10 @@ export function Detail({
     [error, setError] = useState(""),
     [winner, setWinner] = useState(""),
     [metrics, setMetrics] = useState<Metric[]>([]),
-    [metric, setMetric] = useState("");
+    [metric, setMetric] = useState(""),
+    [archivePrompt, setArchivePrompt] = useState(false),
+    [deletePrompt, setDeletePrompt] = useState(false),
+    [deleteKey, setDeleteKey] = useState("");
   useEffect(() => {
     fetchMetrics()
       .then(setMetrics)
@@ -89,7 +94,7 @@ export function Detail({
             >
               <Pause size={15} /> Pause experiment
             </button>
-          ) : r.status !== "completed" ? (
+          ) : r.status === "draft" || r.status === "paused" ? (
             <button
               className="button"
               disabled={busy || !r.metrics.some((m) => m.is_primary)}
@@ -99,6 +104,23 @@ export function Detail({
               {r.status === "draft" ? "Start experiment" : "Resume experiment"}
             </button>
           ) : null}
+          <button
+            className="button secondary danger-button"
+            disabled={busy}
+            onClick={() => setArchivePrompt(true)}
+          >
+            Archive experiment
+          </button>
+          <button
+            className="button secondary danger-button"
+            disabled={busy || r.status === "running"}
+            onClick={() => {
+              setDeleteKey("");
+              setDeletePrompt(true);
+            }}
+          >
+            Delete permanently
+          </button>
         </div>
       </div>
       <ErrorNotice error={error} />
@@ -353,6 +375,105 @@ export function Detail({
             </>
           )}
         </section>
+      )}
+      {archivePrompt && (
+        <dialog open className="dialog confirm-dialog">
+          <div className="dialog-heading">
+            <span className="eyebrow">ARCHIVE EXPERIMENT</span>
+            <button
+              aria-label="Cancel archive"
+              onClick={() => setArchivePrompt(false)}
+            >
+              ×
+            </button>
+          </div>
+          <h2>Archive “{r.summary.name}”?</h2>
+          <p>
+            It will leave the active experiment list and stop new assignments.
+            Existing assignments, exposures, events, and results remain stored
+            for reference.
+          </p>
+          <div className="dialog-actions">
+            <button
+              className="button secondary"
+              onClick={() => setArchivePrompt(false)}
+            >
+              Cancel
+            </button>
+            <button
+              className="button"
+              disabled={busy}
+              onClick={async () => {
+                setBusy(true);
+                setError("");
+                try {
+                  await archiveExperiment(r.experiment_key);
+                  window.location.assign("/app");
+                } catch (e) {
+                  setError(message(e));
+                  setBusy(false);
+                  setArchivePrompt(false);
+                }
+              }}
+            >
+              Confirm archive
+            </button>
+          </div>
+        </dialog>
+      )}
+      {deletePrompt && (
+        <dialog open className="dialog confirm-dialog">
+          <div className="dialog-heading">
+            <span className="eyebrow">PERMANENT DELETE</span>
+            <button
+              aria-label="Cancel delete"
+              onClick={() => setDeletePrompt(false)}
+            >
+              ×
+            </button>
+          </div>
+          <h2>Delete “{r.summary.name}” and its results?</h2>
+          <p>
+            This permanently removes assignments, exposures, variants, linked
+            metrics, and calculated results. Project event records remain in the
+            event stream. A running experiment must be paused or archived first.
+            Type <code>{r.experiment_key}</code> to confirm.
+          </p>
+          <label>
+            Experiment key
+            <input
+              value={deleteKey}
+              onChange={(e) => setDeleteKey(e.target.value)}
+              autoComplete="off"
+            />
+          </label>
+          <div className="dialog-actions">
+            <button
+              className="button secondary"
+              onClick={() => setDeletePrompt(false)}
+            >
+              Cancel
+            </button>
+            <button
+              className="button danger-button"
+              disabled={busy || deleteKey !== r.experiment_key}
+              onClick={async () => {
+                setBusy(true);
+                setError("");
+                try {
+                  await deleteExperiment(r.experiment_key);
+                  window.location.assign("/app");
+                } catch (e) {
+                  setError(message(e));
+                  setBusy(false);
+                  setDeletePrompt(false);
+                }
+              }}
+            >
+              Delete permanently
+            </button>
+          </div>
+        </dialog>
       )}
     </>
   );

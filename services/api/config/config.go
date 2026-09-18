@@ -18,7 +18,7 @@ type Config struct {
 func Load() *Config {
 	return &Config{
 		Port:        env("PORT", "8000"),
-		DatabaseURL: env("DATABASE_URL", "postgresql://aperture:aperture@db:5432/aperture"),
+		DatabaseURL: os.Getenv("DATABASE_URL"),
 		LogLevel:    env("LOG_LEVEL", "info"),
 		Version:     readVersion(),
 	}

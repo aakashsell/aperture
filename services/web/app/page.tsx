@@ -22,6 +22,7 @@ export default function Landing() {
           <a href="#for-you">Is it for you?</a>
           <a href="#how">How it works</a>
           <a href="#open-source">Open source</a>
+          <Link href="/docs">Docs</Link>
           <Link href="/demo">Explore the demo</Link>
           <a href="https://github.com/aakashsell/aperture">
             GitHub <ArrowUpRight size={13} />
@@ -488,6 +489,7 @@ export default function Landing() {
           aperture
         </Link>
         <span>Ship safely. Learn what works.</span>
+        <Link href="/docs">Guides &amp; docs</Link>
         <a href="https://github.com/aakashsell/aperture">
           Explore the source <ArrowUpRight size={13} />
         </a>

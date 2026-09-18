@@ -3,10 +3,11 @@ package handlers
 import (
 	"aperture/api/auth"
 	"aperture/api/db"
-	"github.com/gofiber/fiber/v2"
 	"os"
 	"strings"
 	"time"
+
+	"github.com/gofiber/fiber/v2"
 )
 
 func Session(c *fiber.Ctx) error {
@@ -15,7 +16,47 @@ func Session(c *fiber.Ctx) error {
 	if err != nil {
 		return fiber.NewError(500, "Unable to load project")
 	}
-	return c.JSON(fiber.Map{"email": email, "project_name": name, "publishable_key": key})
+	return c.JSON(fiber.Map{"email": email, "project_id": auth.ProjectID(c), "project_name": name, "publishable_key": key})
+}
+
+func Workspaces(c *fiber.Ctx) error {
+	rows, err := db.Pool.Query(c.Context(), `SELECT id,name FROM projects WHERE owner_id=$1 ORDER BY created_at,id`, auth.UserID(c))
+	if err != nil {
+		return fiber.NewError(500, "Unable to load workspaces")
+	}
+	defer rows.Close()
+	items := make([]fiber.Map, 0)
+	for rows.Next() {
+		var id int
+		var name string
+		if err := rows.Scan(&id, &name); err != nil {
+			return fiber.NewError(500, "Unable to load workspaces")
+		}
+		items = append(items, fiber.Map{"id": id, "name": name})
+	}
+	if err := rows.Err(); err != nil {
+		return fiber.NewError(500, "Unable to load workspaces")
+	}
+	return c.JSON(items)
+}
+
+func CreateWorkspace(c *fiber.Ctx) error {
+	var body struct {
+		Name string `json:"name"`
+	}
+	if err := c.BodyParser(&body); err != nil {
+		return fiber.NewError(400, "Invalid request")
+	}
+	body.Name = strings.TrimSpace(body.Name)
+	if body.Name == "" || len(body.Name) > 80 {
+		return fiber.NewError(400, "Workspace name must be 1–80 characters")
+	}
+	var id int
+	err := db.Pool.QueryRow(c.Context(), `INSERT INTO projects(name,api_key,owner_id,telemetry_secret) VALUES($1,$2,$3,$4) RETURNING id`, body.Name, "ap_pub_"+auth.Credential(), auth.UserID(c), auth.Credential()).Scan(&id)
+	if err != nil {
+		return fiber.NewError(500, "Unable to create workspace")
+	}
+	return c.Status(201).JSON(fiber.Map{"id": id, "name": body.Name})
 }
 func Login(c *fiber.Ctx) error    { return credentials(c, false) }
 func Register(c *fiber.Ctx) error { return credentials(c, true) }

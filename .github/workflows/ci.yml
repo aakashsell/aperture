@@ -8,13 +8,13 @@ jobs:
         image: postgres:16-alpine
         env:
           POSTGRES_USER: aperture
-          POSTGRES_PASSWORD: aperture
+          POSTGRES_PASSWORD: aperture-ci-${{ github.run_id }}-${{ github.run_attempt }}
           POSTGRES_DB: aperture
         ports: ['5432:5432']
         options: --health-cmd='pg_isready -U aperture' --health-interval=5s --health-retries=10
     env:
-      DATABASE_URL: postgresql://aperture:aperture@localhost:5432/aperture
-      JWT_SECRET: ci-only-secret-at-least-32-characters-long
+      DATABASE_URL: postgresql://aperture:aperture-ci-${{ github.run_id }}-${{ github.run_attempt }}@localhost:5432/aperture
+      JWT_SECRET: aperture-ci-jwt-${{ github.run_id }}-${{ github.run_attempt }}-test-only-signing-key
       API_URL: http://localhost:8000
     steps:
       - uses: actions/checkout@v4

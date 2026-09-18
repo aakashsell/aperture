@@ -187,7 +187,7 @@ func ListCrashes(c *fiber.Ctx) error {
 			FROM crash_events WHERE project_id=$1 AND ($3::text IS NULL OR allocation_id_hash=$3) AND ($4::text IS NULL OR allocation_kind=$4)
 			UNION ALL
 			SELECT h.event_id,h.allocation_kind,h.allocation_id_hash,g.key,h.config_version,h.name,h.severity,h.exception_type,h.exception_message,h.exception_stack,h.properties,1,h.timestamp,h.timestamp
-			FROM gate_health_events h JOIN gates g ON g.id=h.gate_id WHERE g.project_id=$1 AND h.exception_type IS NOT NULL AND ($3::text IS NULL OR h.allocation_id_hash=$3) AND ($4::text IS NULL OR h.allocation_kind=$4)
+			FROM gate_health_events h JOIN gates g ON g.id=h.gate_id WHERE g.project_id=$1 AND ($3::text IS NULL OR h.allocation_id_hash=$3) AND ($4::text IS NULL OR h.allocation_kind=$4)
 		) recent ORDER BY last_seen_at DESC LIMIT $2`, projectID, body.Limit, identityHash, allocationKind)
 	if err != nil {
 		return err
