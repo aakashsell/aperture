@@ -20,22 +20,36 @@ Use the publishable project key in client code. It can evaluate, expose, and sen
 
 ## Log a protected rollout
 
-Call `gate()` to choose a path. Keep the current implementation as the fallback if the SDK request fails. Call `exposeGate()` after the application has committed to the selected path; this records both enabled and disabled exposures for comparison.
+Call `gate()` to choose a path. Keep the current implementation as the fallback if the SDK request fails. Call `exposeGate()` after the application has committed to the selected path; this records both enabled and disabled exposures for comparison. Exposure and health reporting are telemetry and must not block the product path.
 
 ```ts
-const allocation = { kind: "installation", id: installationID } as const;
-let enabled = false;
+async function showAlerts() {
+  const allocation = { kind: "installation", id: installationID } as const;
+  let enabled: boolean;
+  try {
+    enabled = await aperture.gate("enhanced-alerts", allocation);
+  } catch {
+    // Keep the established experience on network or SDK failure.
+    await renderCurrentAlerts();
+    return;
+  }
 
-try {
-  enabled = await aperture.gate("enhanced-alerts", allocation);
-} catch {
-  // Keep the current experience on network or SDK failure.
+  // Record the selected arm, but never delay the experience for telemetry.
+  await aperture
+    .exposeGate("enhanced-alerts", enabled, allocation)
+    .catch(() => {});
+  if (enabled) await renderEnhancedAlerts();
+  else await renderCurrentAlerts();
 }
-
-const path = enabled ? "enhanced" : "current";
-renderAlerts(path);
-await aperture.exposeGate("enhanced-alerts", enabled, allocation);
 ```
+
+## If Aperture is unavailable
+
+`gate()` waits for the API request and then rejects on a network/server error. The default request timeout is five seconds (`timeoutMs` can override it). If there is no valid in-memory decision, a cold start can therefore wait up to that timeout before the app reaches its fallback. Always catch the evaluation error and run the existing product behavior; if the error is not caught, the SDK does not choose a fallback for you.
+
+Successful decisions are cached in memory until the server-provided expiry, so repeated calls in the same running client can return immediately. Persistent offline reuse is opt-in with `offlineDecisionTtlMs`; when enabled, it still checks the server first and only uses a stored decision after a transient failure. A previously enabled decision may keep a faulty feature enabled while the service is unreachable, so the remote kill switch cannot take effect on that client until it reconnects. A cached disabled decision may keep the new feature off. Choose a short TTL or leave offline reuse disabled when honoring a remote disable quickly matters more than continuity.
+
+Experiments do not use the rollout offline-decision cache. If `getVariant()` fails, render the app's existing safe experience and skip exposure; do not invent an assignment locally. Likewise, catch failures from `exposeGate()`, `reportGateHealth()`, and crash/event reporting so telemetry outages cannot interrupt an already selected product path.
 
 For a browser or Chrome extension, `gate(key)` may omit the allocation. Aperture creates and persists an anonymous allocation ID. `getAnonymousAllocation()` returns that same ID and kind so an app can display a copyable support or beta-enrollment identifier. Treat it as pseudonymous user data, not as a credential. Supply a stable allocation explicitly when the feature belongs to a user, account, or organization. Do not generate a new random ID for each page view or request.
 

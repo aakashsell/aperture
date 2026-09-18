@@ -369,7 +369,31 @@ export function RolloutDetailView({
       setBusy(false);
     }
   };
-  const snippet = `const enabled = await aperture.gate("${gate.key}");\nawait aperture.exposeGate("${gate.key}", enabled);\n\ntry {\n  enabled ? runNewSync() : runCurrentSync();\n} catch (error) {\n  await aperture.reportGateHealth("${gate.key}", {\n    eventId: crypto.randomUUID(),\n    name: "sync-failed",\n    severity: "error"\n  });\n  throw error;\n}`;
+  const snippet = `async function runProtectedFeature() {
+  let enabled: boolean;
+  try {
+    enabled = await aperture.gate("${gate.key}");
+  } catch {
+    // Keep the current behavior if Aperture cannot be reached.
+    await runCurrentFeature();
+    return;
+  }
+
+  // Telemetry must never block the feature path.
+  await aperture.exposeGate("${gate.key}", enabled).catch(() => {});
+
+  try {
+    if (enabled) await runNewFeature();
+    else await runCurrentFeature();
+  } catch (error) {
+    await aperture.reportGateHealth("${gate.key}", {
+      eventId: crypto.randomUUID(),
+      name: "feature-failed",
+      severity: "error",
+    }).catch(() => {});
+    throw error;
+  }
+}`;
   return (
     <>
       <div className="rollout-detail-heading">

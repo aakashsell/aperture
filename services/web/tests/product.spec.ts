@@ -115,6 +115,11 @@ test("create a Chrome extension rollout, start at 5%, and expand to 100%", async
   await expect(page.locator("pre")).toContainText(
     'await aperture.gate("new-sync-engine")',
   );
+  const integrationSnippet = page.locator(".rollout-integration pre");
+  await expect(integrationSnippet).toContainText("await runCurrentFeature()");
+  await expect(integrationSnippet).toContainText(
+    'await aperture.exposeGate("new-sync-engine", enabled).catch(() => {})',
+  );
   await page.getByRole("button", { name: "5%", exact: true }).click();
   await page.getByRole("button", { name: "Confirm change" }).click();
   await expect(page.getByText("5% live")).toBeVisible();
