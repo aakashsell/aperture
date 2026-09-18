@@ -108,18 +108,31 @@ const aperture = new Aperture({
   publishableKey: "ap_pub_YOUR_PROJECT_KEY",
 });
 
-const enabled = await aperture.gate("new-sync");
-await aperture.exposeGate("new-sync", enabled);
+async function sync() {
+  let enabled: boolean;
+  try {
+    enabled = await aperture.gate("new-sync");
+  } catch {
+    await runCurrentSync();
+    return;
+  }
 
-try {
-  enabled ? runNewSync() : runCurrentSync();
-} catch (error) {
-  await aperture.reportGateHealth("new-sync", {
-    eventId: crypto.randomUUID(),
-    name: "sync-failed",
-    severity: "error",
-  });
-  throw error;
+  // Telemetry failure must not prevent the selected path from running.
+  await aperture.exposeGate("new-sync", enabled).catch(() => {});
+
+  try {
+    if (enabled) await runNewSync();
+    else await runCurrentSync();
+  } catch (error) {
+    await aperture
+      .reportGateHealth("new-sync", {
+        eventId: crypto.randomUUID(),
+        name: "sync-failed",
+        severity: "error",
+      })
+      .catch(() => {});
+    throw error;
+  }
 }
 ```
 

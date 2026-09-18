@@ -8,26 +8,42 @@ Use only documented APIs. Do not implement a separate assignment hash or infer e
 2. Install and initialize `@aperture/sdk` with the project's API URL and publishable key.
 3. In a Chrome extension, ensure the manifest contains the `storage` permission and the Aperture API origin in `host_permissions`. Let `gate(key)` use its persistent anonymous installation ID unless the app already has a better stable allocation unit.
 4. Await `gate(key)` before selecting the new or current code path. On a network or SDK error, use the current behavior.
-5. After committing to the selected path, await `exposeGate(key, enabled)`. Record exposure for enabled and disabled decisions so health rates have a comparison group.
+5. After committing to the selected path, call `exposeGate(key, enabled)`. Record exposure for enabled and disabled decisions so health rates have a comparison group. Exposure and health reporting are best-effort telemetry and should not block the application path.
 6. Report relevant failures with `reportGateHealth()`. Use a fresh event ID for a new failure and preserve the same ID when retrying. Do not report unrelated errors just to create activity.
 7. Keep the current implementation available as the fallback through the rollout. Do not delete it while the rollout is below 100%.
 8. Show the human the changed files and the exact fallback behavior. The human reviews the integration and starts at 5% in the dashboard.
 9. Treat “No health flags observed” as an operational signal, not proof of safety. A human reviews exposure counts and failure rates before expanding to 25%, 50%, or 100%.
 
 ```ts
-const enabled = await aperture.gate("new-sync");
-await aperture.exposeGate("new-sync", enabled);
-try {
-  enabled ? runNewSync() : runCurrentSync();
-} catch (error) {
-  await aperture.reportGateHealth("new-sync", {
-    eventId: crypto.randomUUID(),
-    name: "sync-failed",
-    severity: "error",
-  });
-  throw error;
+async function sync() {
+  let enabled: boolean;
+  try {
+    enabled = await aperture.gate("new-sync");
+  } catch {
+    await runCurrentSync();
+    return;
+  }
+
+  // Telemetry failure must not prevent the selected path from running.
+  await aperture.exposeGate("new-sync", enabled).catch(() => {});
+
+  try {
+    if (enabled) await runNewSync();
+    else await runCurrentSync();
+  } catch (error) {
+    await aperture
+      .reportGateHealth("new-sync", {
+        eventId: crypto.randomUUID(),
+        name: "sync-failed",
+        severity: "error",
+      })
+      .catch(() => {});
+    throw error;
+  }
 }
 ```
+
+If gate evaluation fails, run the current implementation without recording an Aperture exposure. Keep exposure immediately before the selected path so failures from either arm can be compared. Await the application operation so asynchronous failures are caught; keep reporting best-effort so a telemetry outage cannot mask or block product behavior.
 
 ## Run an experiment
 

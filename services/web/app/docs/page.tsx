@@ -295,6 +295,24 @@ await aperture.exposeGate("libre-cgm", enabled);`}</pre>
                 shown, and events capture the outcome. An agent must not start
                 or widen a live rollout without your approval.
               </p>
+              <p>
+                For Codex, copy the Aperture skill into your app repository at
+                <code>.agents/skills/aperture-integration/SKILL.md</code>. The
+                skill links back to the maintained integration and telemetry
+                guides, so agents check current instructions instead of
+                relying on a copied API reference. Other coding agents can use
+                the same guides directly or load the skill from their own
+                project skill location.
+              </p>
+              <pre className="docs-code">{`mkdir -p .agents/skills/aperture-integration
+curl -fsSL https://raw.githubusercontent.com/aakashsell/aperture/main/skills/aperture-integration/SKILL.md \\
+  -o .agents/skills/aperture-integration/SKILL.md`}</pre>
+              <a
+                className="text-button"
+                href="https://github.com/aakashsell/aperture/blob/main/skills/aperture-integration/SKILL.md"
+              >
+                Get the Aperture agent skill <ArrowUpRight size={14} />
+              </a>
               <a
                 className="text-button"
                 href="https://github.com/aakashsell/aperture/blob/main/docs/AGENT_INTEGRATION.md"
