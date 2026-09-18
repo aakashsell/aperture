@@ -296,22 +296,25 @@ await aperture.exposeGate("libre-cgm", enabled);`}</pre>
                 or widen a live rollout without your approval.
               </p>
               <p>
-                For Codex, copy the Aperture skill into your app repository at
-                <code>.agents/skills/aperture-integration/SKILL.md</code>. The
-                skill links back to the maintained integration and telemetry
-                guides, so agents check current instructions instead of
-                relying on a copied API reference. Other coding agents can use
-                the same guides directly or load the skill from their own
-                project skill location.
+                Install the Aperture skill into your current project with the
+                Skills CLI. It detects your coding agent and installs the
+                project skill in its supported location. New installs use the
+                current GitHub version; refresh it later with the update
+                command. The skill points agents to the maintained guides
+                instead of duplicating API details.
               </p>
-              <pre className="docs-code">{`mkdir -p .agents/skills/aperture-integration
-curl -fsSL https://raw.githubusercontent.com/aakashsell/aperture/main/skills/aperture-integration/SKILL.md \\
-  -o .agents/skills/aperture-integration/SKILL.md`}</pre>
+              <pre className="docs-code">{`npx skills add aakashsell/aperture --skill aperture-integration
+
+# Later, refresh the installed skill
+npx skills update aperture-integration`}</pre>
               <a
                 className="text-button"
                 href="https://github.com/aakashsell/aperture/blob/main/skills/aperture-integration/SKILL.md"
               >
                 Get the Aperture agent skill <ArrowUpRight size={14} />
+              </a>
+              <a className="text-button" href="https://skills.sh/">
+                Browse the skills directory <ArrowUpRight size={14} />
               </a>
               <a
                 className="text-button"

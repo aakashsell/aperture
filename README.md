@@ -224,7 +224,15 @@ Await exposure before dependent events. Preserve event IDs when retrying; events
 
 After rollout, assignments return the selected feature variant for everyone. Stop calling `expose()` for completed experiments: rollout decisions are not new experimental exposures.
 
-See [agent integration instructions](docs/AGENT_INTEGRATION.md) for a repeatable integration checklist.
+Install the coding-agent skill from GitHub with the [Skills CLI](https://skills.sh/):
+
+```sh
+npx skills add aakashsell/aperture --skill aperture-integration
+# Refresh it later to get the latest workflow instructions:
+npx skills update aperture-integration
+```
+
+The skill links to [agent integration instructions](docs/AGENT_INTEGRATION.md) and the [telemetry guide](docs/TELEMETRY_GUIDE.md), which remain the detailed, maintained reference.
 
 For exact SDK instrumentation steps—including gate health, global crashes, experiment exposure and conversion events—see the [telemetry guide](docs/TELEMETRY_GUIDE.md). For workspace creation, switching, and access boundaries, see the [workspaces guide](docs/WORKSPACES.md). For hiding or permanently removing resources, see the [rollout and experiment lifecycle guide](docs/RESOURCE_LIFECYCLE.md). The [integration feedback roadmap](docs/INTEGRATION_FEEDBACK_ROADMAP.md) tracks the feature status and architecture.
 
